@@ -47,7 +47,7 @@ mod plain_assassinate;
 mod plain_summon;
 mod plain_zombie;
 mod prepared_init;
-mod profile;
+pub(crate) mod profile;
 mod runner;
 pub mod scheduler;
 pub mod scratch;

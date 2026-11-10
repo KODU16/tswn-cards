@@ -324,6 +324,25 @@ impl CombatRuntime {
         updates: RunUpdates,
     ) -> RoundOutcome {
         debug_assert_eq!(updates.capture_updates, CAPTURE_UPDATES);
+        // 每次实际行动结束后恢复全队；空调度步不触发遗物。
+        if action.is_some() {
+            let shield_skill = self.registry.skill_id_by_export_name(crate::runtime::profile::DEFAULT_CORE_SHIELD_SKILL_EXPORT);
+            let living: Vec<_> = self.entities.iter().filter(|(_, entity)| entity.runtime.alive).map(|(id, _)| id).collect();
+            for entity_id in living {
+                let entity = self.entities.get_mut(entity_id).expect("living relic target disappeared");
+                if self.relic_heal_team == Some(entity.runtime.team) {
+                    let heal = ((entity.template.max_hp as f64) * 0.03).ceil() as i32;
+                    entity.runtime.hp = (entity.runtime.hp + heal.max(1)).min(entity.template.max_hp).max(entity.runtime.hp);
+                }
+                if self.relic_shield_team == Some(entity.runtime.team) {
+                    let skill_cap = shield_skill.and_then(|id| entity.template.skills.skills().iter().position(|skill| *skill == id))
+                        .and_then(|lane| entity.template.skills.level_at(lane)).unwrap_or(0) as i32;
+                    let cap = if skill_cap > 0 { skill_cap } else { 30 };
+                    let shield = self.relic_shields.entry(entity_id.0).or_default();
+                    *shield = (*shield + 3).min(cap);
+                }
+            }
+        }
         let frame = (CAPTURE_UPDATES && updates.had_updates()).then_some(RuntimeFrame { updates });
         self.round += 1;
         let winner_team = if CAPTURE_UPDATES {

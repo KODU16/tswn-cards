@@ -472,6 +472,8 @@ impl CombatRuntime {
         let Some(amount) = defend_value.damage() else {
             panic!("runtime POST_DEFEND hooks must leave a damage value");
         };
+        // 在附加效果之前拦截低额交战伤害，净化等命中效果随本次伤害一同失效。
+        let amount = if self.relic_blocks_damage(actor, target, amount) { 0 } else { amount };
         #[cfg(not(feature = "no_debug"))]
         if debug_attack {
             eprintln!(
@@ -523,6 +525,10 @@ impl CombatRuntime {
         on_damage: PlainAttackOnDamage,
         updates: &mut RunUpdates,
     ) -> bool {
+        if self.relic_blocks_damage(caster, target, amount) {
+            updates.add(RuntimeFrame::legacy_damage_update(caster.0 as usize, target.0 as usize, 0));
+            return false;
+        }
         let target_entity = self
             .entities
             .get_mut(target)

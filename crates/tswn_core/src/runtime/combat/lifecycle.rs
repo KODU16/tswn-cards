@@ -40,6 +40,12 @@ impl CombatRuntime {
             #[cfg(not(feature = "no_debug"))]
             trace: None,
             round: 0,
+            relic_heal_team: None,
+            relic_shield_team: None,
+            relic_damage_floor: false,
+            assassinate_relic_team: None,
+            relic_assassinate_hits: Default::default(),
+            relic_shields: Default::default(),
         }
     }
 

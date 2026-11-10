@@ -18,6 +18,14 @@ pub struct BattleOptions {
     pub controlled_team: Option<usize>,
     /// 开局体力倍率（如 1.25 表示以 125% 体力开场）；只作用于受控队伍。
     pub start_hp_pct: Option<f64>,
+    /// 初版 PL 测号器持有者的运行时队伍；开场附加一回合疾走与迟缓。
+    pub opening_relic_team: Option<usize>,
+    /// 按行动回合为该队伍恢复生命和护盾；戾气对交战双方对称生效。
+    pub healing_relic_team: Option<usize>,
+    pub shielding_relic_team: Option<usize>,
+    pub relic_damage_floor: bool,
+    /// 背刺遗物持有者队伍：潜行可承受两次受击，背刺伤害提高 50%。
+    pub assassinate_relic_team: Option<usize>,
 }
 
 impl Default for BattleOptions {
@@ -28,6 +36,11 @@ impl Default for BattleOptions {
             max_rounds: BINDING_COMPLETION_MAX_ROUNDS,
             controlled_team: None,
             start_hp_pct: None,
+            opening_relic_team: None,
+            healing_relic_team: None,
+            shielding_relic_team: None,
+            relic_damage_floor: false,
+            assassinate_relic_team: None,
         }
     }
 }

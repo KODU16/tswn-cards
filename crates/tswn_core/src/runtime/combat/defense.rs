@@ -323,7 +323,7 @@ impl CombatRuntime {
                 (
                     entity.template.skills.hook_generation(),
                     entity.states.generation(),
-                    entity.runtime.shield > 0,
+                    entity.runtime.shield > 0 || self.relic_shields.get(&target.0).is_some_and(|shield| *shield > 0),
                 )
             };
             let skill_plan = self
@@ -395,7 +395,7 @@ impl CombatRuntime {
                     .unwrap_or_else(|| panic!("runtime 防御钩子目标已消失：{}", target.0));
                 rebuild = entity.template.skills.hook_generation() != skill_generation
                     || entity.states.generation() != state_generation
-                    || (entity.runtime.shield > 0) != shield_active;
+                    || (entity.runtime.shield > 0 || self.relic_shields.get(&target.0).is_some_and(|shield| *shield > 0)) != shield_active;
                 if rebuild {
                     break;
                 }
@@ -413,17 +413,22 @@ impl CombatRuntime {
         if damage <= 0 {
             return;
         }
+        let target_id = target;
         let target = self
             .entities
             .get_mut(target)
             .unwrap_or_else(|| panic!("runtime shield target disappeared: {}", target.0));
-        if target.runtime.shield <= 0 {
+        let relic_shield = self.relic_shields.entry(target_id.0).or_default();
+        if target.runtime.shield <= 0 && *relic_shield <= 0 {
             return;
         }
-        if damage > target.runtime.shield {
+        if damage > target.runtime.shield + *relic_shield {
             target.runtime.shield = 0;
+            *relic_shield = 0;
         } else {
-            target.runtime.shield -= damage;
+            let from_skill = damage.min(target.runtime.shield);
+            target.runtime.shield -= from_skill;
+            *relic_shield -= damage - from_skill;
             defend_value.set_damage(0);
         }
     }
@@ -466,6 +471,7 @@ impl CombatRuntime {
         amount: i32,
         updates: &mut RunUpdates,
     ) -> bool {
+        if self.relic_blocks_damage(caster, target, amount) { return false; }
         let target_entity = self
             .entities
             .get_mut(target)
@@ -489,6 +495,7 @@ impl CombatRuntime {
         updates: &mut RunUpdates,
         replay: fn(usize, usize, i32) -> crate::runtime::update::RunUpdate,
     ) -> bool {
+        if self.relic_blocks_damage(caster, target, amount) { return false; }
         let Some(target_entity) = self.entities.get_mut(target) else {
             panic!("unknown runtime damage target entity: {}", target.0);
         };
@@ -513,6 +520,7 @@ impl CombatRuntime {
         amount: i32,
         updates: &mut RunUpdates,
     ) -> bool {
+        if self.relic_blocks_damage(caster, target, amount) { return false; }
         let target_entity = self
             .entities
             .get_mut(target)
@@ -535,6 +543,7 @@ impl CombatRuntime {
         amount: i32,
         updates: &mut RunUpdates,
     ) -> bool {
+        if self.relic_blocks_damage(caster, target, amount) { return false; }
         let Some(target_entity) = self.entities.get_mut(target) else {
             panic!("unknown runtime disperse damage target entity: {}", target.0);
         };

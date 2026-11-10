@@ -91,4 +91,22 @@ pub struct CombatRuntime {
     #[cfg(not(feature = "no_debug"))]
     pub trace: Option<RuntimeTrace>,
     pub round: u64,
+    /// 仅网站遗物启用；普通引擎对局保持原始规则。
+    pub relic_heal_team: Option<usize>,
+    pub relic_shield_team: Option<usize>,
+    pub relic_damage_floor: bool,
+    /// 背刺遗物只作用于指定队伍，受击计数与潜行状态分离保存。
+    pub assassinate_relic_team: Option<usize>,
+    pub relic_assassinate_hits: std::collections::HashMap<u32, u8>,
+    /// 遗物护盾与技能护盾分别累计，再在防御结算时共同吸收伤害。
+    pub relic_shields: std::collections::HashMap<u32, i32>,
+}
+
+impl CombatRuntime {
+    /// 戾气只拦截敌对双方的低额伤害，队友、自伤与回复不受影响。
+    pub(crate) fn relic_blocks_damage(&self, caster: EntityIdx, target: EntityIdx, amount: i32) -> bool {
+        self.relic_damage_floor && amount > 0 && amount < 30
+            && self.entities.get(caster).zip(self.entities.get(target))
+                .is_some_and(|(from, to)| from.runtime.team != to.runtime.team)
+    }
 }

@@ -1,7 +1,8 @@
 ﻿use super::{BattleOptions, BattleStopReason};
 use crate::cli_api::{CliApiError, CliApiResult, invalid_input};
 use crate::runtime::model_state::{BattleModelState, ModelStateError};
-use crate::runtime::{RunUpdates, RuntimeRunner};
+use crate::runtime::{RunUpdates, RuntimeRunner, StateEntry};
+use crate::runtime::profile::{DEFAULT_CORE_HASTE_STATE_EXPORT, DEFAULT_CORE_SLOW_STATE_EXPORT, PLAIN_HASTE_STATE_KEY};
 
 /// 两种会话共享的逐回合驱动；展示层仍在每个空回合后更新差分快照。
 #[derive(Debug)]
@@ -35,6 +36,30 @@ impl BattleDriver {
         let (groups, seed) = RuntimeRunner::split_namerena_into_groups(raw.to_owned());
         let mut runner = RuntimeRunner::new_from_groups_with_seed_and_eval_rq(&groups, &seed, options.eval_rq)
             .map_err(|e| CliApiError::RunnerInit(e.to_string()))?;
+        {
+            let runtime = runner.runtime_mut();
+            runtime.relic_heal_team = options.healing_relic_team;
+            runtime.relic_shield_team = options.shielding_relic_team;
+            runtime.relic_damage_floor = options.relic_damage_floor;
+            runtime.assassinate_relic_team = options.assassinate_relic_team;
+        }
+        if let Some(team) = options.opening_relic_team {
+            let runtime = runner.runtime_mut();
+            let haste_id = runtime.registry.state_id_by_export_name(DEFAULT_CORE_HASTE_STATE_EXPORT)
+                .expect("default profile must register haste");
+            let slow_id = runtime.registry.state_id_by_export_name(DEFAULT_CORE_SLOW_STATE_EXPORT)
+                .expect("default profile must register slow");
+            let haste_priority = runtime.registry.state(haste_id).expect("haste state disappeared").priority;
+            let slow_priority = runtime.registry.state(slow_id).expect("slow state disappeared").priority;
+            // 沿用技能本身的状态键与持续计数，开场快照和行动顺序立即反映遗物效果。
+            for entity in runtime.entities.iter_all_mut().filter(|entity| entity.runtime.alive) {
+                if entity.runtime.team == team {
+                    entity.states.add_entry(StateEntry::haste(PLAIN_HASTE_STATE_KEY, haste_id, 2, 2, haste_priority));
+                } else {
+                    entity.states.add_entry(StateEntry::slow(78, slow_id, 2, slow_priority));
+                }
+            }
+        }
         if let Some(pct) = options.start_hp_pct {
             if pct > 1.0 {
                 let team = options.controlled_team;

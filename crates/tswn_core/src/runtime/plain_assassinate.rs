@@ -162,6 +162,7 @@ impl CombatRuntime {
         if let Some(pending) = pending {
             entity.template.skills.remove_pre_action_lane(pending.fixed_lane);
         }
+        self.relic_assassinate_hits.remove(&actor.0);
         pending
     }
 
@@ -192,7 +193,8 @@ impl CombatRuntime {
                 let at1 = owner.get_at(true, &mut self.rng);
                 let at2 = owner.get_at(true, &mut self.rng);
                 let at3 = owner.get_at(true, &mut self.rng);
-                at1.max(at2).max(at3) * 4.0
+                let multiplier = if self.assassinate_relic_team == Some(owner.team) { 6.0 } else { 4.0 };
+                at1.max(at2).max(at3) * multiplier
             };
             if self.status_immune(target, "assassinate") {
                 updates.add(RuntimeFrame::replay_update(
@@ -218,6 +220,9 @@ impl CombatRuntime {
             target,
             break_on_damage: !charge_active,
         });
+        if self.assassinate_relic_team == Some(owner.runtime.team) {
+            self.relic_assassinate_hits.insert(actor.0, 0);
+        }
         owner.template.skills.ensure_pre_action_lane(fixed_lane);
         updates.add(RuntimeFrame::replay_update(
             actor.0 as usize,
@@ -228,14 +233,25 @@ impl CombatRuntime {
     }
 
     pub(super) fn run_plain_assassinate_post_damage_into(&mut self, owner: EntityIdx, damage: i32, updates: &mut RunUpdates) {
-        if damage <= 0
-            || !self
-                .entities
-                .get(owner)
-                .and_then(|entity| entity.runtime.assassinate)
-                .is_some_and(|pending| pending.break_on_damage)
-        {
+        let Some((break_on_damage, relic_guarded)) = self.entities.get(owner).and_then(|entity| entity.runtime.assassinate.map(|pending| {
+            (pending.break_on_damage, self.assassinate_relic_team == Some(entity.runtime.team))
+        })) else {
             return;
+        };
+        if damage <= 0 || !break_on_damage { return; }
+        if relic_guarded {
+            let hits = self.relic_assassinate_hits.entry(owner.0).or_default();
+            *hits = hits.saturating_add(1);
+            if *hits < 2 {
+                updates.add_newline();
+                updates.add(RuntimeFrame::replay_update(
+                    owner.0 as usize,
+                    owner.0 as usize,
+                    "[0]的[潜行]仍未被识破（1/2）",
+                    0,
+                ));
+                return;
+            }
         }
         let pending = self
             .clear_plain_assassinate_pending(owner)
