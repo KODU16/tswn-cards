@@ -3,10 +3,7 @@ use crate::cli_api::{CliApiError, CliApiResult};
 
 /// 收集规范会话，但不引入另一套执行策略。
 pub fn battle_replay(raw: &str, options: BattleOptions) -> CliApiResult<BattleReplay> {
-    crate::runtime::forced_action::set_controlled_team(options.controlled_team);
-    let result = battle_replay_inner(raw, options);
-    crate::runtime::forced_action::set_controlled_team(None);
-    result
+    battle_replay_inner(raw, options)
 }
 
 fn battle_replay_inner(raw: &str, options: BattleOptions) -> CliApiResult<BattleReplay> {

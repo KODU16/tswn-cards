@@ -87,7 +87,10 @@ impl BattleSession {
         }
     }
     /// 正常终止原因；运行中及 Runtime 失败后均为 `None`。
-    pub fn stop_reason(&self) -> Option<BattleStopReason> { self.driver.stop_reason }
+    /// 暂停等待 cards 指令时不是终局，但需要向前端报告 paused 原因。
+    pub fn stop_reason(&self) -> Option<BattleStopReason> {
+        self.paused.map(|_| BattleStopReason::Paused).or(self.driver.stop_reason)
+    }
     /// 是否已产生正常 terminal BattleResult；Runtime failure 不属于正常终止。
     pub fn is_done(&self) -> bool { self.driver.stop_reason.is_some() }
     /// Runtime error 后为 true；后续推进返回相同错误，调用方应停止推进并释放会话。
@@ -114,6 +117,7 @@ impl BattleSession {
         }
         loop {
             let Some(step) = self.driver.advance_round()? else {
+                self.paused = self.driver.forced.paused_actor.take();
                 return Ok(None);
             };
             let round_index = step.round_index;
@@ -127,7 +131,7 @@ impl BattleSession {
                 frame
             });
             self.current_states = states;
-            if let Some(actor) = crate::runtime::forced_action::take_pause() {
+            if let Some(actor) = self.driver.forced.paused_actor.take() {
                 self.paused = Some(actor);
             }
             if frame.is_some() || self.is_done() || self.paused.is_some() {
@@ -138,6 +142,19 @@ impl BattleSession {
 
     /// 受控单位把战斗逼停时，返回等待玩家指令的实体 id。
     pub fn paused_actor(&self) -> Option<u32> { self.paused }
+
+    /// 为当前暂停实体补交一条 cards 指令；暂停不是终局，下一次推进会续行。
+    pub fn submit_action(&mut self, actor: u32, skill: u32, packed_mp: u32) -> CliApiResult<()> {
+        if self.paused != Some(actor) {
+            return Err(crate::cli_api::CliApiError::InvalidArgument("actor is not waiting for an action".into()));
+        }
+        let decoded = crate::runtime::forced_action::decode_actions(&[actor, skill, packed_mp])
+            .map_err(crate::cli_api::CliApiError::InvalidArgument)?;
+        self.driver.forced.queue.extend(decoded.pairs);
+        self.driver.forced.potions.extend(decoded.potions);
+        self.paused = None;
+        Ok(())
+    }
 
     /// 正常终止后返回拥有最终快照的结果；运行中或粘性失败时为 `None`。
     ///

@@ -52,6 +52,12 @@ impl BattleSession {
     /// 同步推进至下一可见帧；正常结束或截断后返回 JS null，可重复调用。
     /// Runtime 失败会保留 sticky error 并重复抛错，应停止推进并释放会话。
     pub fn next_frame(&mut self) -> WasmResult<JsValue> { dto_to_js(&self.inner.next_frame().map_err(cli_api_error)?) }
+    /// 返回 cards 前端当前需要提交指令的实体；没有暂停时返回 null。
+    pub fn paused_actor(&self) -> Option<u32> { self.inner.paused_actor() }
+    /// 提交当前暂停实体的一条 cards 行动封包。
+    pub fn submit_action(&mut self, actor: u32, skill: u32, packed_mp: u32) -> WasmResult<()> {
+        self.inner.submit_action(actor, skill, packed_mp).map_err(cli_api_error)
+    }
     #[wasm_bindgen(unchecked_return_type = "BattleStatus")]
     pub fn status(&self) -> WasmResult<JsValue> { dto_to_js(&self.inner.status()) }
     #[wasm_bindgen(unchecked_return_type = "BattleStopReason | null")]

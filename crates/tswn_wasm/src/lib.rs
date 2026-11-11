@@ -382,23 +382,10 @@ pub fn battle_replay_forced(
 ) -> WasmResult<JsValue> {
     install_panic_hook();
     let options = ts_in(options)?;
-    // 三元组：actor, skill, mp（0 表示这一手没有指定消耗，由引擎现场掷）
-    let pairs = actions
-        .chunks_exact(3)
-        .map(|chunk| {
-            let cost = chunk[2] & 0xff;
-            (chunk[0], chunk[1], (cost > 0).then_some(cost))
-        })
-        .collect::<Vec<_>>();
-    let potions = actions
-        .chunks_exact(3)
-        .filter_map(|chunk| {
-            let code = chunk[2] >> 8;
-            (code > 0).then_some((chunk[0], code))
-        })
-        .collect::<Vec<_>>();
-    tswn_core::runtime::forced_action::set_potions(potions);
-    tswn_core::runtime::forced_action::set(pairs);
+    // 先拒绝不完整或未知的协议值，保持 cards 的批量与流式入口一致。
+    let decoded = tswn_core::runtime::forced_action::decode_actions(&actions).map_err(error::invalid_argument)?;
+    tswn_core::runtime::forced_action::set_potions(decoded.potions);
+    tswn_core::runtime::forced_action::set(decoded.pairs);
     let result = tswn_core::cli_api::battle_replay(&raw_input, options.to_core());
     tswn_core::runtime::forced_action::clear();
     battle::dto_to_js(&result.map_err(error::cli_api_error)?)

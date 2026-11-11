@@ -73,6 +73,8 @@ impl CombatRuntime {
         }
         #[cfg(not(feature = "no_debug"))]
         let action_rng_before = RngCheckpoint::from_rc4(&self.rng);
+        // 药水仅在服用者下一次被调度时还原；同回合的准备分支不能提前清除。
+        self.revert_active_potion(action.actor);
         let smart = self.roll_actor_smart(action.actor);
         // 潜行 pending 的 pre-action 槽位可能在技能表重建（升级/合并/状态刷新）时被丢掉，
         // tswn 自己在施放时会 ensure 一次，这里在每次行动前补回来，
@@ -117,7 +119,12 @@ impl CombatRuntime {
                 return None;
             }
             let forced_pre_action_skill = plain_skill_pre_action.forced_skill.is_some();
-            let Some(prepared) = self.prepare_plain_action(action.actor, smart, plain_skill_pre_action) else {
+            let prepared = self.prepare_plain_action(action.actor, smart, plain_skill_pre_action);
+            if let Some((actor, reason)) = crate::runtime::forced_action::take_fallback() {
+                updates.add_newline();
+                updates.add(RuntimeFrame::replay_update(actor as usize, actor as usize, reason, 0));
+            }
+            let Some(prepared) = prepared else {
                 return Some(self.finish_round_with_capture::<CAPTURE_UPDATES>(None, updates));
             };
             match &prepared {
@@ -401,7 +408,6 @@ impl CombatRuntime {
     ) -> Option<PreparedPlainAction> {
         crate::runtime::forced_action::hit();
         // 上一手的药水只持续一回合，这里先还原
-        self.revert_active_potion();
         // 狂暴（含被附体）期间由引擎接管：不接收玩家指令、也不停下来要牌。
         let berserk_forced = !pre_action.clear_forced_action && self.has_plain_berserk_state(actor);
         let mut berserk_submitted = false;
@@ -444,6 +450,9 @@ impl CombatRuntime {
                     entity.runtime.magic_point -= req_mp;
                 }
                 return Some(PreparedPlainAction::BuiltinSkill(prepared));
+            }
+            if forced_skill != 255 {
+                crate::runtime::forced_action::record_fallback(actor.0, "[1]的指定技能无法生效，改为普通攻击");
             }
             let target = self.select_plain_default_attack_target(actor, smart)?;
             return Some(PreparedPlainAction::BasicAttack {
@@ -655,8 +664,8 @@ impl CombatRuntime {
     }
 
     /// 还原上一回合的药水加成
-    fn revert_active_potion(&mut self) {
-        let Some((actor_id, field, delta)) = crate::runtime::forced_action::take_active_potion() else { return };
+    fn revert_active_potion(&mut self, actor: EntityIdx) {
+        let Some((actor_id, field, delta)) = crate::runtime::forced_action::take_active_potion(actor.0) else { return };
         let entity = self.entities.get_mut(EntityIdx(actor_id));
         let Some(entity) = entity else { return };
         match field {
