@@ -83,6 +83,8 @@ pub struct BattleOptions {
     #[tsify(optional)]
     pub relic_damage_floor: Option<bool>,
     #[tsify(optional)]
+    pub stat_relic_team: Option<usize>,
+    #[tsify(optional)]
     pub assassinate_relic_team: Option<usize>,
 }
 
@@ -98,6 +100,7 @@ impl Default for BattleOptions {
             healing_relic_team: None,
             shielding_relic_team: None,
             relic_damage_floor: None,
+            stat_relic_team: None,
             assassinate_relic_team: None,
         }
     }
@@ -119,6 +122,7 @@ impl BattleOptions {
         options.healing_relic_team = self.healing_relic_team;
         options.shielding_relic_team = self.shielding_relic_team;
         options.relic_damage_floor = self.relic_damage_floor.unwrap_or(false);
+        options.stat_relic_team = self.stat_relic_team;
         options.assassinate_relic_team = self.assassinate_relic_team;
         options
     }

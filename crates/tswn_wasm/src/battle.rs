@@ -58,6 +58,10 @@ impl BattleSession {
     pub fn submit_action(&mut self, actor: u32, skill: u32, packed_mp: u32) -> WasmResult<()> {
         self.inner.submit_action(actor, skill, packed_mp).map_err(cli_api_error)
     }
+    /// 写入 cards 能力卡三元组；必须在会话开始推进前调用。
+    pub fn set_abilities(&mut self, packet: Vec<u32>) -> WasmResult<()> {
+        self.inner.set_abilities(&packet).map_err(cli_api_error)
+    }
     #[wasm_bindgen(unchecked_return_type = "BattleStatus")]
     pub fn status(&self) -> WasmResult<JsValue> { dto_to_js(&self.inner.status()) }
     #[wasm_bindgen(unchecked_return_type = "BattleStopReason | null")]

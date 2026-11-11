@@ -24,6 +24,8 @@ pub struct BattleOptions {
     pub healing_relic_team: Option<usize>,
     pub shielding_relic_team: Option<usize>,
     pub relic_damage_floor: bool,
+    /// 帮测贴开场属性增益所属队伍；仅原始角色获得两项随机基础加成。
+    pub stat_relic_team: Option<usize>,
     /// 背刺遗物持有者队伍：潜行可承受两次受击，背刺伤害提高 50%。
     pub assassinate_relic_team: Option<usize>,
 }
@@ -40,6 +42,7 @@ impl Default for BattleOptions {
             healing_relic_team: None,
             shielding_relic_team: None,
             relic_damage_floor: false,
+            stat_relic_team: None,
             assassinate_relic_team: None,
         }
     }

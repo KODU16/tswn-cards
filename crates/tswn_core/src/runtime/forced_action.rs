@@ -17,6 +17,8 @@ pub struct ForcedState {
     pub controlled_team: Option<usize>,
     pub paused_actor: Option<u32>,
     pub fallback: Option<(u32, String)>,
+    /// (公开技能编号, MP 减免, 伤害/效果倍率的万分比)。
+    pub abilities: Vec<(u32, u32, u32)>,
     pub hits: u32,
     pub taken: u32,
 }
@@ -90,6 +92,27 @@ pub fn record_fallback(actor: u32, reason: impl Into<String>) {
     CURRENT.with(|state| state.borrow_mut().fallback = Some((actor, reason.into())));
 }
 pub fn take_fallback() -> Option<(u32, String)> { CURRENT.with(|state| state.borrow_mut().fallback.take()) }
+
+/// 解码 cards 能力卡三元组；能力只改变运行时，不会改写角色技能熟练度。
+pub fn decode_abilities(packet: &[u32]) -> Result<Vec<(u32, u32, u32)>, String> {
+    if packet.len() % 3 != 0 {
+        return Err("abilities must contain skill/reduction/multiplier triples".into());
+    }
+    let mut result = Vec::with_capacity(packet.len() / 3);
+    for row in packet.chunks_exact(3) {
+        if row[0] >= 37 || row[1] > 20 || !(10_000..=20_000).contains(&row[2]) {
+            return Err("invalid ability packet".into());
+        }
+        result.push((row[0], row[1], row[2]));
+    }
+    Ok(result)
+}
+pub fn mp_reduction(skill: u32) -> u32 {
+    CURRENT.with(|state| state.borrow().abilities.iter().find(|(id, _, _)| *id == skill).map_or(0, |(_, mp, _)| *mp))
+}
+pub fn ability_multiplier(skill: u32) -> f64 {
+    CURRENT.with(|state| state.borrow().abilities.iter().find(|(id, _, _)| *id == skill).map_or(1.0, |(_, _, power)| *power as f64 / 10_000.0))
+}
 
 pub fn take_potion(actor: u32) -> Option<u32> {
     CURRENT.with(|state| {

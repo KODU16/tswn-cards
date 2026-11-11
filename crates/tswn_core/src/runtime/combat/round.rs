@@ -431,6 +431,7 @@ impl CombatRuntime {
                     (req_mp_byte & 15) as i32 + 8
                 }
             };
+            let req_mp = (req_mp - crate::runtime::forced_action::mp_reduction(forced_skill) as i32).max(1);
             let (mp, attack) = {
                 let entity = self
                     .entities

@@ -156,6 +156,16 @@ impl BattleSession {
         Ok(())
     }
 
+    /// 在首回合前注入 cards 能力卡；不会修改角色原始技能或熟练度。
+    pub fn set_abilities(&mut self, packet: &[u32]) -> CliApiResult<()> {
+        if self.driver.rounds_advanced != 0 || self.driver.forced.controlled_team.is_none() {
+            return Err(crate::cli_api::CliApiError::InvalidArgument("abilities require an unadvanced controlled session".into()));
+        }
+        self.driver.forced.abilities = crate::runtime::forced_action::decode_abilities(packet)
+            .map_err(crate::cli_api::CliApiError::InvalidArgument)?;
+        Ok(())
+    }
+
     /// 正常终止后返回拥有最终快照的结果；运行中或粘性失败时为 `None`。
     ///
     /// 重复查询不推进战斗，但每次都会复制最终快照及其字符串。需要多次使用结果时

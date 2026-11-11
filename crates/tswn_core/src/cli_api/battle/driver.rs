@@ -45,6 +45,34 @@ impl BattleDriver {
             runtime.relic_damage_floor = options.relic_damage_floor;
             runtime.assassinate_relic_team = options.assassinate_relic_team;
         }
+        if let Some(team) = options.stat_relic_team {
+            // 加成只落在开局原始角色的运行时，分身和召唤模板不会继承该遗物。
+            let ids: Vec<_> = runner.runtime().entities.iter()
+                .filter(|(_, entity)| entity.runtime.alive && entity.runtime.team == team && entity.runtime.owner == entity.runtime.root_owner)
+                .map(|(id, _)| id)
+                .collect();
+            for id in ids {
+                let first = runner.runtime_mut().rng.next_u8() as usize % 8;
+                let mut second = runner.runtime_mut().rng.next_u8() as usize % 8;
+                while second == first {
+                    second = runner.runtime_mut().rng.next_u8() as usize % 8;
+                }
+                let entity = runner.runtime_mut().entities.get_mut(id).expect("relic target disappeared");
+                for field in [first, second] {
+                    match field {
+                        0 => entity.runtime.attack += 10,
+                        1 => entity.runtime.defense += 10,
+                        2 => entity.runtime.speed += 10,
+                        3 => entity.runtime.agility += 10,
+                        4 => entity.runtime.magic += 10,
+                        5 => entity.runtime.resistance += 10,
+                        6 => entity.runtime.wisdom += 10,
+                        7 => { entity.template.max_hp += 30; entity.runtime.hp += 30; },
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
         if let Some(team) = options.opening_relic_team {
             let runtime = runner.runtime_mut();
             let haste_id = runtime.registry.state_id_by_export_name(DEFAULT_CORE_HASTE_STATE_EXPORT)
@@ -56,9 +84,9 @@ impl BattleDriver {
             // 沿用技能本身的状态键与持续计数，开场快照和行动顺序立即反映遗物效果。
             for entity in runtime.entities.iter_all_mut().filter(|entity| entity.runtime.alive) {
                 if entity.runtime.team == team {
-                    entity.states.add_entry(StateEntry::haste(PLAIN_HASTE_STATE_KEY, haste_id, 2, 2, haste_priority));
+                    entity.states.add_entry(StateEntry::haste(PLAIN_HASTE_STATE_KEY, haste_id, 2, 1, haste_priority));
                 } else {
-                    entity.states.add_entry(StateEntry::slow(78, slow_id, 2, slow_priority));
+                    entity.states.add_entry(StateEntry::slow(78, slow_id, 1, slow_priority));
                 }
             }
         }

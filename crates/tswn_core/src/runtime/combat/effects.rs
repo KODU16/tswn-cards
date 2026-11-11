@@ -86,7 +86,7 @@ impl CombatRuntime {
                     let fire_mag = self.entities.get(target).unwrap().states.fire_mag(fire_state_key);
                     let atp = self.entities.get(caster).unwrap().runtime.get_at(true, &mut self.rng);
                     let mut defend_value = RuntimeDefendValue::Atp {
-                        value: atp * (1.5 + fire_mag),
+                        value: atp * (1.5 + fire_mag) * crate::runtime::forced_action::ability_multiplier(0),
                         caster,
                         target,
                         is_magic: true,
@@ -144,7 +144,7 @@ impl CombatRuntime {
                     let fire_mag = self.entities.get(target).unwrap().states.fire_mag(fire_state_key);
                     let atp = self.entities.get(caster).unwrap().runtime.get_at(true, &mut self.rng);
                     let mut defend_value = RuntimeDefendValue::Atp {
-                        value: atp * (4.0 + fire_mag),
+                        value: atp * (4.0 + fire_mag) * crate::runtime::forced_action::ability_multiplier(0),
                         caster,
                         target,
                         is_magic: true,
