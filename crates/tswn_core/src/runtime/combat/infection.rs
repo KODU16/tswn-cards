@@ -40,6 +40,7 @@ impl CombatRuntime {
             .registry
             .state_id_by_export_name(DEFAULT_CORE_POISON_STATE_EXPORT)
             .expect("default runtime profile must register poison state");
+        let extended = self.relic_debuff_turns(caster, target);
         let target_entity = self
             .entities
             .get_mut(target)
@@ -61,7 +62,7 @@ impl CombatRuntime {
                         caster: Some(caster.0),
                         target: existing_target.or(Some(target.0)),
                         atp_bits: (existing_atp + poison_atp).to_bits(),
-                        count: 4,
+                        count: 4 + extended,
                     },
                 ),
                 "runtime poison state disappeared while stacking"
@@ -74,7 +75,7 @@ impl CombatRuntime {
                     Some(caster.0),
                     Some(target.0),
                     poison_atp,
-                    4,
+                    4 + extended,
                     SkillPriority(150),
                 )),
                 "runtime poison state key should be vacant"
@@ -86,6 +87,8 @@ impl CombatRuntime {
             target.0 as usize,
             60,
         ));
+        self.relic_status_applied(target, PLAIN_POISON_STATE_KEY);
+        self.language_debuff(caster, target);
     }
 
     pub fn covid_boss_mutation(&self, boss: EntityIdx) -> Option<i32> {

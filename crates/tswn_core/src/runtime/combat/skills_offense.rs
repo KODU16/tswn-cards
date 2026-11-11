@@ -7,6 +7,8 @@ impl CombatRuntime {
         prepared: PreparedBuiltinSkillAction,
         updates: &mut RunUpdates,
     ) {
+        // 效果倍率限定于实际施法者的能力作用域。
+        let _ability = self.ability_scope(actor, prepared.selected.skill.export_name());
         match prepared.selected.skill {
             BuiltinActiveSkill::Fire => {
                 let target = prepared.targets[0];
@@ -555,6 +557,12 @@ impl CombatRuntime {
             .state(haste_state_id)
             .expect("default runtime core haste state disappeared")
             .priority;
+        // 红内裤只延长有持续时间的正面状态。
+        let extended = i32::from(
+            self.entities
+                .get(target)
+                .is_some_and(|e| self.positive_status_relic_team == Some(e.template.team)),
+        );
         let target_entity = self
             .entities
             .get_mut(target)
@@ -564,7 +572,7 @@ impl CombatRuntime {
             .entry(PLAIN_HASTE_STATE_KEY)
             .and_then(StateEntry::haste_runtime_value)
         {
-            step += 2;
+            step += 2 + extended;
             if charge_active {
                 faster += 2;
                 step += 2;
@@ -587,7 +595,7 @@ impl CombatRuntime {
                     haste_state_id,
                     if charge_active { 4 } else { 2 },
                     2,
-                    if charge_active { 5 } else { 3 },
+                    (if charge_active { 5 } else { 3 }) + extended,
                     haste_priority,
                 )),
                 "runtime haste state should be inserted"
@@ -609,7 +617,13 @@ impl CombatRuntime {
                 .unwrap_or_else(|| panic!("unknown runtime iron actor: {}", actor.0));
             (owner.runtime.magic, owner.runtime.at_boost_millionths >= 3_000_000)
         };
-        let step = 3 + if charge_active { 4 } else { 0 };
+        let step = 3
+            + if charge_active { 4 } else { 0 }
+            + i32::from(
+                self.entities
+                    .get(actor)
+                    .is_some_and(|e| self.positive_status_relic_team == Some(e.template.team)),
+            );
         let protect = 110 + magic + if charge_active { 240 + magic * 4 } else { 0 };
         updates.add(crate::runtime::update::RunUpdate::new(
             "[0]发动[铁壁]",

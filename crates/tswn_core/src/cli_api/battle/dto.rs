@@ -1,4 +1,4 @@
-﻿use crate::replay_view::ReplayState;
+use crate::replay_view::ReplayState;
 use crate::runtime::{BINDING_COMPLETION_MAX_ROUNDS, PlrId};
 use serde::Serialize;
 
@@ -28,6 +28,13 @@ pub struct BattleOptions {
     pub stat_relic_team: Option<usize>,
     /// 背刺遗物持有者队伍：潜行可承受两次受击，背刺伤害提高 50%。
     pub assassinate_relic_team: Option<usize>,
+    // 卡牌遗物分别归属指定队伍，缺省时保留普通战斗规则。
+    pub language_relic_team: Option<usize>,
+    pub debuff_relic_team: Option<usize>,
+    pub clone_relic_team: Option<usize>,
+    pub positive_status_relic_team: Option<usize>,
+    pub thanks_relic_team: Option<usize>,
+    pub inequality_relic_team: Option<usize>,
 }
 
 impl Default for BattleOptions {
@@ -44,6 +51,12 @@ impl Default for BattleOptions {
             relic_damage_floor: false,
             stat_relic_team: None,
             assassinate_relic_team: None,
+            language_relic_team: None,
+            debuff_relic_team: None,
+            clone_relic_team: None,
+            positive_status_relic_team: None,
+            thanks_relic_team: None,
+            inequality_relic_team: None,
         }
     }
 }

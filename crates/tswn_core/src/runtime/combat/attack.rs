@@ -211,6 +211,7 @@ impl CombatRuntime {
                 actor_entity.runtime.alive = false;
                 actor_entity.runtime.team
             };
+            self.relic_inequality_death(actor, updates);
             self.world.mark_dead(actor, team);
             return;
         }
@@ -473,7 +474,11 @@ impl CombatRuntime {
             panic!("runtime POST_DEFEND hooks must leave a damage value");
         };
         // 在附加效果之前拦截低额交战伤害，净化等命中效果随本次伤害一同失效。
-        let amount = if self.relic_blocks_damage(actor, target, amount) { 0 } else { amount };
+        let amount = if self.relic_blocks_damage(actor, target, amount) {
+            0
+        } else {
+            amount
+        };
         #[cfg(not(feature = "no_debug"))]
         if debug_attack {
             eprintln!(
@@ -553,7 +558,7 @@ impl CombatRuntime {
             PlainAttackOnDamage::Absorb => self.apply_absorb_on_damage(caster, amount, updates),
             PlainAttackOnDamage::Berserk => self.apply_berserk_on_damage(caster, target, amount, updates),
             PlainAttackOnDamage::Curse => self.apply_curse_on_damage(caster, target, amount, updates),
-            PlainAttackOnDamage::Fire(fire_state_key) if amount > 0 => self.apply_fire_on_damage(target, fire_state_key),
+            PlainAttackOnDamage::Fire(fire_state_key) if amount > 0 => self.apply_fire_on_damage(caster, target, fire_state_key),
             PlainAttackOnDamage::Fire(_) => {}
             PlainAttackOnDamage::Ice if amount > 0 => self.apply_ice_on_damage(caster, target, updates),
             PlainAttackOnDamage::Ice => {}
@@ -597,6 +602,7 @@ impl CombatRuntime {
         if self.entities.get(target).is_none_or(|entity| entity.runtime.hp <= 0) || self.status_immune(target, "berserk") {
             return;
         }
+        let extended = self.relic_debuff_turns(caster, target);
         let charge_active = self
             .entities
             .get(caster)
@@ -622,7 +628,8 @@ impl CombatRuntime {
             else {
                 unreachable!("runtime berserk state key changed payload during extension");
             };
-            *step += 1 + i32::from(charge_active);
+            *step += 1 + i32::from(charge_active) + extended;
+            self.relic_status_applied(target, state_key);
             return;
         }
 
@@ -631,9 +638,13 @@ impl CombatRuntime {
                 .get_mut(target)
                 .unwrap_or_else(|| panic!("unknown runtime berserk target: {}", target.0))
                 .states
-                .add_entry(StateEntry::berserk(PLAIN_BERSERK_STATE_KEY, 1 + i32::from(charge_active),)),
+                .add_entry(StateEntry::berserk(
+                    PLAIN_BERSERK_STATE_KEY,
+                    1 + i32::from(charge_active) + extended,
+                )),
             "runtime berserk state should be inserted"
         );
+        self.relic_status_applied(target, PLAIN_BERSERK_STATE_KEY);
         updates.add(crate::runtime::update::RunUpdate::new(
             "[1]进入[狂暴]状态",
             caster.0 as usize,
@@ -709,5 +720,7 @@ impl CombatRuntime {
             target.0 as usize,
             60,
         ));
+        self.relic_status_applied(target, PLAIN_CURSE_STATE_KEY);
+        self.language_debuff(caster, target);
     }
 }

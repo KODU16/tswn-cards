@@ -40,6 +40,15 @@ impl CombatRuntime {
             #[cfg(not(feature = "no_debug"))]
             trace: None,
             round: 0,
+            language_relic_team: None,
+            debuff_relic_team: None,
+            clone_relic_team: None,
+            positive_status_relic_team: None,
+            thanks_relic_team: None,
+            inequality_relic_team: None,
+            relic_thanks: Default::default(),
+            relic_expiries: Default::default(),
+            relic_consumed: Default::default(),
             relic_heal_team: None,
             relic_shield_team: None,
             relic_damage_floor: false,
@@ -265,6 +274,11 @@ impl CombatRuntime {
         selected_target: Option<EntityIdx>,
     ) {
         for entry in entries {
+            // 被动技能同样使用实际发动者的独立能力。
+            let _ability = self.ability_scope(
+                entry.owner,
+                &self.registry.skill(entry.skill_id).expect("skill exists").export_name,
+            );
             let (handler, capabilities) = if let Some(static_handler) = self.builtin_static_skill_handler(entry.skill_id) {
                 static_handler
             } else {
@@ -331,6 +345,11 @@ impl CombatRuntime {
         defend_value: &mut RuntimeDefendValue,
         on_damage: PlainAttackOnDamage,
     ) {
+        // 防御与反弹按实际发动者计算独立能力。
+        let _ability = self.ability_scope(
+            entry.owner,
+            &self.registry.skill(entry.skill_id).expect("skill exists").export_name,
+        );
         let (handler, capabilities) = if let Some(static_handler) = self.builtin_static_skill_handler(entry.skill_id) {
             static_handler
         } else {

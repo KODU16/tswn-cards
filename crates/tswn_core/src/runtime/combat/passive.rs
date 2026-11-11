@@ -238,6 +238,7 @@ impl CombatRuntime {
                 continue;
             }
 
+            let _ability = self.ability_scope(owner, "core.skill.counter");
             if !self.entity_mp_ready(owner) {
                 continue;
             }

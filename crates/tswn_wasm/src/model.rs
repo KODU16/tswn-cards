@@ -1,4 +1,4 @@
-﻿//! WASM 层数据模型定义。
+//! WASM 层数据模型定义。
 //!
 //! 定义从 Rust 向 JavaScript 暴露的所有数据结构，包括战斗选项、玩家元数据、
 //! 每帧状态快照、战斗回放、胜率结果等，均通过 `tsify` 生成对应的 TypeScript 类型声明。
@@ -86,6 +86,19 @@ pub struct BattleOptions {
     pub stat_relic_team: Option<usize>,
     #[tsify(optional)]
     pub assassinate_relic_team: Option<usize>,
+    // 卡牌遗物分别归属指定队伍，缺省时保留普通战斗规则。
+    #[tsify(optional)]
+    pub language_relic_team: Option<usize>,
+    #[tsify(optional)]
+    pub debuff_relic_team: Option<usize>,
+    #[tsify(optional)]
+    pub clone_relic_team: Option<usize>,
+    #[tsify(optional)]
+    pub positive_status_relic_team: Option<usize>,
+    #[tsify(optional)]
+    pub thanks_relic_team: Option<usize>,
+    #[tsify(optional)]
+    pub inequality_relic_team: Option<usize>,
 }
 
 impl Default for BattleOptions {
@@ -102,6 +115,12 @@ impl Default for BattleOptions {
             relic_damage_floor: None,
             stat_relic_team: None,
             assassinate_relic_team: None,
+            language_relic_team: None,
+            debuff_relic_team: None,
+            clone_relic_team: None,
+            positive_status_relic_team: None,
+            thanks_relic_team: None,
+            inequality_relic_team: None,
         }
     }
 }
@@ -124,6 +143,12 @@ impl BattleOptions {
         options.relic_damage_floor = self.relic_damage_floor.unwrap_or(false);
         options.stat_relic_team = self.stat_relic_team;
         options.assassinate_relic_team = self.assassinate_relic_team;
+        options.language_relic_team = self.language_relic_team;
+        options.debuff_relic_team = self.debuff_relic_team;
+        options.clone_relic_team = self.clone_relic_team;
+        options.positive_status_relic_team = self.positive_status_relic_team;
+        options.thanks_relic_team = self.thanks_relic_team;
+        options.inequality_relic_team = self.inequality_relic_team;
         options
     }
 }

@@ -192,7 +192,12 @@ impl RuntimeRunner {
                 .skill_id_by_export_name(DEFAULT_CORE_SHIELD_SKILL_EXPORT)
                 .and_then(|skill| entity.template.skills.skills().iter().position(|id| *id == skill))
                 .and_then(|lane| entity.template.skills.level_at(lane))
-                .unwrap_or(0).max(if self.runtime.relic_shield_team == Some(entity.runtime.team) { 30 } else { 0 }),
+                .unwrap_or(0)
+                .max(if self.runtime.relic_shield_team == Some(entity.runtime.team) {
+                    30
+                } else {
+                    0
+                }),
             magic_point: entity.runtime.magic_point,
             move_point: entity.runtime.move_state.speed_points,
             attack: entity.runtime.attack,

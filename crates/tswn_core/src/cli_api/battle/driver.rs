@@ -1,8 +1,8 @@
-﻿use super::{BattleOptions, BattleStopReason};
+use super::{BattleOptions, BattleStopReason};
 use crate::cli_api::{CliApiError, CliApiResult, invalid_input};
 use crate::runtime::model_state::{BattleModelState, ModelStateError};
-use crate::runtime::{RunUpdates, RuntimeRunner, StateEntry};
 use crate::runtime::profile::{DEFAULT_CORE_HASTE_STATE_EXPORT, DEFAULT_CORE_SLOW_STATE_EXPORT, PLAIN_HASTE_STATE_KEY};
+use crate::runtime::{RunUpdates, RuntimeRunner, StateEntry};
 
 /// 两种会话共享的逐回合驱动；展示层仍在每个空回合后更新差分快照。
 #[derive(Debug)]
@@ -44,11 +44,29 @@ impl BattleDriver {
             runtime.relic_shield_team = options.shielding_relic_team;
             runtime.relic_damage_floor = options.relic_damage_floor;
             runtime.assassinate_relic_team = options.assassinate_relic_team;
+            // 在首帧之前注入遗物队伍，开场状态同样应用持续时间加成。
+            runtime.language_relic_team = options.language_relic_team;
+            runtime.debuff_relic_team = options.debuff_relic_team;
+            runtime.clone_relic_team = options.clone_relic_team;
+            runtime.positive_status_relic_team = options.positive_status_relic_team;
+            runtime.thanks_relic_team = options.thanks_relic_team;
+            runtime.inequality_relic_team = options.inequality_relic_team;
+        }
+        // 无效控制队伍必须拒绝，双方控制使用既有的最大 u32 标记。
+        if let Some(team) = options.controlled_team {
+            if team != u32::MAX as usize && !runner.runtime().entities.iter().any(|(_, e)| e.runtime.team == team) {
+                return Err(CliApiError::InvalidArgument("controlled_team does not exist".into()));
+            }
         }
         if let Some(team) = options.stat_relic_team {
             // 加成只落在开局原始角色的运行时，分身和召唤模板不会继承该遗物。
-            let ids: Vec<_> = runner.runtime().entities.iter()
-                .filter(|(_, entity)| entity.runtime.alive && entity.runtime.team == team && entity.runtime.owner == entity.runtime.root_owner)
+            let ids: Vec<_> = runner
+                .runtime()
+                .entities
+                .iter()
+                .filter(|(_, entity)| {
+                    entity.runtime.alive && entity.runtime.team == team && entity.runtime.owner == entity.runtime.root_owner
+                })
                 .map(|(id, _)| id)
                 .collect();
             for id in ids {
@@ -59,41 +77,63 @@ impl BattleDriver {
                 }
                 let entity = runner.runtime_mut().entities.get_mut(id).expect("relic target disappeared");
                 for field in [first, second] {
-                    match field {
-                        0 => entity.runtime.attack += 10,
-                        1 => entity.runtime.defense += 10,
-                        2 => entity.runtime.speed += 10,
-                        3 => entity.runtime.agility += 10,
-                        4 => entity.runtime.magic += 10,
-                        5 => entity.runtime.resistance += 10,
-                        6 => entity.runtime.wisdom += 10,
-                        7 => { entity.template.max_hp += 30; entity.runtime.hp += 30; },
-                        _ => unreachable!(),
-                    }
+                    entity.template.opening_bonus[field] += if field == 7 { 30 } else { 10 };
                 }
+                entity.template.apply_opening_bonus();
+                entity.refresh_runtime_stats_from_template();
+                entity.runtime.hp += entity.template.opening_bonus[7];
             }
         }
         if let Some(team) = options.opening_relic_team {
             let runtime = runner.runtime_mut();
-            let haste_id = runtime.registry.state_id_by_export_name(DEFAULT_CORE_HASTE_STATE_EXPORT)
+            let haste_id = runtime
+                .registry
+                .state_id_by_export_name(DEFAULT_CORE_HASTE_STATE_EXPORT)
                 .expect("default profile must register haste");
-            let slow_id = runtime.registry.state_id_by_export_name(DEFAULT_CORE_SLOW_STATE_EXPORT)
+            let slow_id = runtime
+                .registry
+                .state_id_by_export_name(DEFAULT_CORE_SLOW_STATE_EXPORT)
                 .expect("default profile must register slow");
             let haste_priority = runtime.registry.state(haste_id).expect("haste state disappeared").priority;
             let slow_priority = runtime.registry.state(slow_id).expect("slow state disappeared").priority;
             // 沿用技能本身的状态键与持续计数，开场快照和行动顺序立即反映遗物效果。
             for entity in runtime.entities.iter_all_mut().filter(|entity| entity.runtime.alive) {
                 if entity.runtime.team == team {
-                    entity.states.add_entry(StateEntry::haste(PLAIN_HASTE_STATE_KEY, haste_id, 2, 1, haste_priority));
+                    entity.states.add_entry(StateEntry::haste(
+                        PLAIN_HASTE_STATE_KEY,
+                        haste_id,
+                        2,
+                        1 + i32::from(options.positive_status_relic_team == Some(team)),
+                        haste_priority,
+                    ));
                 } else {
-                    entity.states.add_entry(StateEntry::slow(78, slow_id, 1, slow_priority));
+                    entity.states.add_entry(StateEntry::slow(
+                        78,
+                        slow_id,
+                        1 + i32::from(options.debuff_relic_team == Some(team))
+                            + i32::from(options.thanks_relic_team == Some(entity.template.team)),
+                        slow_priority,
+                    ));
                 }
             }
         }
+        // 开场负面状态也必须在首帧之前登记拜谢。
+        let slow_targets: Vec<_> = runner
+            .runtime()
+            .entities
+            .iter()
+            .filter(|(_, e)| e.states.entry(78).is_some())
+            .map(|(id, _)| id)
+            .collect();
+        for id in slow_targets {
+            runner.runtime_mut().relic_status_applied(id, 78);
+        }
         if let Some(pct) = options.start_hp_pct {
             // 百分比开局生命只服务 cards 的受控队伍；无队伍时不得悄悄改双方状态。
-            if !pct.is_finite() || pct <= 0.0 || (pct > 1.0 && options.controlled_team.is_none()) {
-                return Err(CliApiError::InvalidArgument("start_hp_pct must be finite and positive; bonuses require controlled_team".into()));
+            if !pct.is_finite() || pct <= 0.0 || options.controlled_team.is_none() {
+                return Err(CliApiError::InvalidArgument(
+                    "start_hp_pct must be finite and positive; bonuses require controlled_team".into(),
+                ));
             }
             let team = options.controlled_team;
             let runtime = runner.runtime_mut();
@@ -103,11 +143,13 @@ impl BattleDriver {
                     None => true,
                 };
                 if is_ours && entity.runtime.alive {
-                    entity.runtime.hp = (entity.template.max_hp as f64 * pct).round() as i32;
+                    entity.runtime.hp = (entity.template.max_hp as f64 * pct).round().clamp(1.0, i32::MAX as f64) as i32;
                 }
             }
         }
-        let mut forced = crate::runtime::forced_action::take_pending_actions();
+        // 创建时接管暂存指令；会话之间不共享后续动作。
+        let mut forced = crate::runtime::forced_action::ForcedState::default();
+        forced.queue = crate::runtime::forced_action::take_pending_actions();
         forced.controlled_team = options.controlled_team;
         Self::new_with_forced(runner, options.max_rounds, forced)
     }

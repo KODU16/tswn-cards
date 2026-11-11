@@ -159,11 +159,16 @@ impl CloneBuildData {
 
     pub(crate) fn score_skill_boost_plan(&self) -> Option<&ScoreCloneSkillBoostPlan> { self.score_skill_boost_plan.as_ref() }
 
-    pub fn decay_owner(&mut self) {
+    pub fn decay_owner(&mut self) { self.decay_owner_with_weakening(1.0); }
+
+    /// `weakening` 为原始分身削弱的比例；0.8 代表少削弱 20%。
+    pub fn decay_owner_with_weakening(&mut self, weakening: f64) {
+        let attr_factor = 1.0 - (1.0 - CLONE_ATTR_DECAY) * weakening;
+        let hp_factor = 1.0 - 0.5 * weakening;
         for attr in &mut self.attrs[..7] {
-            *attr = ((*attr as f64) * CLONE_ATTR_DECAY).ceil() as u32;
+            *attr = ((*attr as f64) * attr_factor).ceil() as u32;
         }
-        self.attrs[7] = ((self.attrs[7] as f64) * 0.5).ceil() as u32;
+        self.attrs[7] = ((self.attrs[7] as f64) * hp_factor).ceil() as u32;
     }
 
     pub fn child(&self) -> Self {
@@ -252,6 +257,8 @@ impl CloneBuildData {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlayerTemplate {
+    /// 帮测贴的开场增益独立于 clone_build，派生单位不继承。
+    pub opening_bonus: [i32; 8],
     pub id: PlrId,
     pub reserved_player_ids_before_spawn: u32,
     pub name: String,
@@ -308,6 +315,7 @@ impl PlayerTemplate {
             skills: SkillLoadout::default(),
             team,
             max_hp,
+            opening_bonus: [0; 8],
             attack,
             magic: 0,
             magic_point: 0,
@@ -355,6 +363,7 @@ impl PlayerTemplate {
             skills,
             team,
             max_hp: status.max_hp,
+            opening_bonus: [0; 8],
             attack: status.attack,
             magic: status.magic,
             magic_point: status.magic_point,
@@ -491,6 +500,20 @@ impl PlayerTemplate {
         self.attr_sum = stats.attr_sum;
         self.atk_sum = stats.atk_sum;
         self.attract_bits = stats.attract_bits;
+        self.apply_opening_bonus();
+    }
+
+    /// 只叠加模板基础值，不改名字八围或分身蓝图；属性重建后仍保留原角色增益。
+    pub fn apply_opening_bonus(&mut self) {
+        let b = self.opening_bonus;
+        self.attack += b[0];
+        self.defense += b[1];
+        self.speed += b[2];
+        self.agility += b[3];
+        self.magic += b[4];
+        self.resistance += b[5];
+        self.wisdom += b[6];
+        self.max_hp += b[7];
     }
 
     /// 从准备模板恢复一场战斗可能修改的热字段。
@@ -506,6 +529,7 @@ impl PlayerTemplate {
         self.skills.reset_battle_fields_from(&prepared.skills);
         self.team = prepared.team;
         self.max_hp = prepared.max_hp;
+        self.opening_bonus = prepared.opening_bonus;
         self.attack = prepared.attack;
         self.magic = prepared.magic;
         self.magic_point = prepared.magic_point;

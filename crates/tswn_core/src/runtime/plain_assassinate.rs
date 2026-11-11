@@ -193,7 +193,11 @@ impl CombatRuntime {
                 let at1 = owner.get_at(true, &mut self.rng);
                 let at2 = owner.get_at(true, &mut self.rng);
                 let at3 = owner.get_at(true, &mut self.rng);
-                let multiplier = if self.assassinate_relic_team == Some(owner.team) { 6.0 } else { 4.0 };
+                let multiplier = if self.assassinate_relic_team == Some(owner.team) {
+                    6.0
+                } else {
+                    4.0
+                };
                 at1.max(at2).max(at3) * multiplier
             };
             if self.status_immune(target, "assassinate") {
@@ -233,12 +237,19 @@ impl CombatRuntime {
     }
 
     pub(super) fn run_plain_assassinate_post_damage_into(&mut self, owner: EntityIdx, damage: i32, updates: &mut RunUpdates) {
-        let Some((break_on_damage, relic_guarded)) = self.entities.get(owner).and_then(|entity| entity.runtime.assassinate.map(|pending| {
-            (pending.break_on_damage, self.assassinate_relic_team == Some(entity.runtime.team))
-        })) else {
+        let Some((break_on_damage, relic_guarded)) = self.entities.get(owner).and_then(|entity| {
+            entity.runtime.assassinate.map(|pending| {
+                (
+                    pending.break_on_damage,
+                    self.assassinate_relic_team == Some(entity.runtime.team),
+                )
+            })
+        }) else {
             return;
         };
-        if damage <= 0 || !break_on_damage { return; }
+        if damage <= 0 || !break_on_damage {
+            return;
+        }
         if relic_guarded {
             let hits = self.relic_assassinate_hits.entry(owner.0).or_default();
             *hits = hits.saturating_add(1);

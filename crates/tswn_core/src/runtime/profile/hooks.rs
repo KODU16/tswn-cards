@@ -50,7 +50,7 @@ pub fn run_shield_pre_action_skill(context: &mut SkillContext<'_>, entry: &Skill
         return;
     }
     let max = (1 + (level as i32 * 3 / 4)).max(1);
-    let add = context.rng_next_i32(max) + 1;
+    let add = ((context.rng_next_i32(max) + 1) as f64 * context.ability_multiplier()).round() as i32;
     context.set_owner_shield(shield + add).expect("runtime shield skill owner must exist");
 }
 
@@ -83,7 +83,7 @@ pub fn run_reraise_die_skill(context: &mut SkillContext<'_>, entry: &SkillHookPl
     if context.rng_r127() >= level {
         return;
     }
-    let hp = context.rng_r16() as i32;
+    let hp = (context.rng_r16() as f64 * context.ability_multiplier()).round() as i32;
     context.reraise_owner(entry, hp).expect("runtime reraise owner must exist");
     let mut reraise_update = crate::runtime::update::RunUpdate::new(
         "[0]使用[护身符]抵挡了一次死亡",

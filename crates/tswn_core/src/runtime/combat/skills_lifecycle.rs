@@ -262,6 +262,8 @@ impl CombatRuntime {
             .state(slow_state_id)
             .expect("default runtime core slow state disappeared")
             .priority;
+        // 迟缓在行动结束时消耗一个内部步长。
+        let extended = self.relic_debuff_turns(actor, target);
         let target_entity = self
             .entities
             .get_mut(target)
@@ -270,6 +272,7 @@ impl CombatRuntime {
         target_entity.runtime.move_state.speed_points -= reduce_move_point;
         let next_step = target_entity.states.entry(78).and_then(StateEntry::slow_value).map_or(2, |step| step + 2)
             + if charge_active { 4 } else { 0 };
+        let next_step = next_step + extended;
         if target_entity.states.entry(78).is_some() {
             assert!(
                 target_entity.states.set_payload(78, StatePayload::Slow { step: next_step }),
@@ -292,6 +295,8 @@ impl CombatRuntime {
             target.0 as usize,
             60,
         ));
+        self.relic_status_applied(target, 78);
+        self.language_debuff(actor, target);
     }
 
     pub fn drain_plain_shadow_skill_into(&mut self, actor: EntityIdx, fixed_lane: usize, updates: &mut RunUpdates) {

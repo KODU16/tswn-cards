@@ -205,6 +205,8 @@ impl CombatRuntime {
                 .get(link.owner)
                 .is_some_and(|_| self.plain_effective_team(link.owner) == target_team);
             let trigger_ok = same_group && self.rng.r127() < level;
+            // 守护按实际守护者的能力计算。
+            let _ability = self.ability_scope(link.owner, "core.skill.protect");
             let protector_ready = trigger_ok && self.entity_mp_ready(link.owner);
 
             #[cfg(not(feature = "no_debug"))]
@@ -395,7 +397,8 @@ impl CombatRuntime {
                     .unwrap_or_else(|| panic!("runtime 防御钩子目标已消失：{}", target.0));
                 rebuild = entity.template.skills.hook_generation() != skill_generation
                     || entity.states.generation() != state_generation
-                    || (entity.runtime.shield > 0 || self.relic_shields.get(&target.0).is_some_and(|shield| *shield > 0)) != shield_active;
+                    || (entity.runtime.shield > 0 || self.relic_shields.get(&target.0).is_some_and(|shield| *shield > 0))
+                        != shield_active;
                 if rebuild {
                     break;
                 }
@@ -471,7 +474,9 @@ impl CombatRuntime {
         amount: i32,
         updates: &mut RunUpdates,
     ) -> bool {
-        if self.relic_blocks_damage(caster, target, amount) { return false; }
+        if self.relic_blocks_damage(caster, target, amount) {
+            return false;
+        }
         let target_entity = self
             .entities
             .get_mut(target)
@@ -495,7 +500,9 @@ impl CombatRuntime {
         updates: &mut RunUpdates,
         replay: fn(usize, usize, i32) -> crate::runtime::update::RunUpdate,
     ) -> bool {
-        if self.relic_blocks_damage(caster, target, amount) { return false; }
+        if self.relic_blocks_damage(caster, target, amount) {
+            return false;
+        }
         let Some(target_entity) = self.entities.get_mut(target) else {
             panic!("unknown runtime damage target entity: {}", target.0);
         };
@@ -520,7 +527,9 @@ impl CombatRuntime {
         amount: i32,
         updates: &mut RunUpdates,
     ) -> bool {
-        if self.relic_blocks_damage(caster, target, amount) { return false; }
+        if self.relic_blocks_damage(caster, target, amount) {
+            return false;
+        }
         let target_entity = self
             .entities
             .get_mut(target)
@@ -543,7 +552,9 @@ impl CombatRuntime {
         amount: i32,
         updates: &mut RunUpdates,
     ) -> bool {
-        if self.relic_blocks_damage(caster, target, amount) { return false; }
+        if self.relic_blocks_damage(caster, target, amount) {
+            return false;
+        }
         let Some(target_entity) = self.entities.get_mut(target) else {
             panic!("unknown runtime disperse damage target entity: {}", target.0);
         };
@@ -595,7 +606,7 @@ impl CombatRuntime {
         PlayerRuntime::dodge(accuracy, dodge_value, &mut self.rng)
     }
 
-    pub fn apply_fire_on_damage(&mut self, target: EntityIdx, fire_state_key: u32) {
+    pub fn apply_fire_on_damage(&mut self, caster: EntityIdx, target: EntityIdx, fire_state_key: u32) {
         let Some(target_entity) = self.entities.get(target) else {
             panic!("unknown runtime fire target entity: {}", target.0);
         };
@@ -607,6 +618,8 @@ impl CombatRuntime {
             panic!("unknown runtime fire target entity: {}", target.0);
         };
         target_entity.states.add_fire_mag_half_step(fire_state_key);
+        self.relic_status_applied(target, fire_state_key);
+        self.language_debuff(caster, target);
     }
 
     pub fn apply_ice_on_damage(&mut self, caster: EntityIdx, target: EntityIdx, updates: &mut RunUpdates) {
@@ -620,7 +633,7 @@ impl CombatRuntime {
             .entities
             .get(caster)
             .is_some_and(|entity| entity.runtime.at_boost_millionths >= 3_000_000);
-        let frozen_step = 1024 + if charge_active { 2048 } else { 0 };
+        let frozen_step = 1024 + if charge_active { 2048 } else { 0 } + self.relic_debuff_turns(caster, target) * 1024;
         let target_entity = self.entities.get_mut(target).unwrap();
         let first_application = target_entity.states.entry(PLAIN_ICE_STATE_KEY).is_none();
         target_entity.states.add_ice_frozen_step(PLAIN_ICE_STATE_KEY, frozen_step);
@@ -635,6 +648,7 @@ impl CombatRuntime {
             "[1]被[冰冻]了",
             40,
         ));
+        self.language_debuff(caster, target);
     }
 
     pub fn status_immune(&mut self, target: EntityIdx, status: &'static str) -> bool {
@@ -690,10 +704,12 @@ impl CombatRuntime {
         if has_deferred_self_death_minion {
             // 自爆先把使魔标为 hp=0，随后伤害又击杀 owner 时，legacy 的
             // death_queue 会先移除 owner，再处理使魔的延迟自杀。
+            self.relic_inequality_death(owner, updates);
             self.world.mark_dead(owner, team);
             self.cleanup_linked_minions_for_owner(owner, updates);
         } else {
             self.cleanup_linked_minions_for_owner(owner, updates);
+            self.relic_inequality_death(owner, updates);
             self.world.mark_dead(owner, team);
         }
     }
@@ -764,6 +780,7 @@ impl CombatRuntime {
             minion_entity.runtime.hp = 0;
             minion_entity.runtime.alive = false;
             let team = minion_entity.runtime.team;
+            self.relic_inequality_death(minion, updates);
             self.world.mark_dead(minion, team);
             updates.add_newline();
             updates.add(crate::runtime::update::RunUpdate::new(

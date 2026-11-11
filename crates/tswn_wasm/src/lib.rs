@@ -1,4 +1,4 @@
-﻿//! JavaScript / WebAssembly 接入层与浏览器示例的计算接口。
+//! JavaScript / WebAssembly 接入层与浏览器示例的计算接口。
 //!
 //! 游戏规则来自 core；本 crate 负责 wasm-bindgen 边界、对象生命周期、DTO 转换及
 //! TypeScript 声明。页面主题、播放游标和 DOM 渲染位于 `examples/` 展示层。
@@ -372,8 +372,8 @@ pub fn battle_replay(raw_input: String, options: Option<Ts<BattleReplayOptions>>
 
 /// 与 battle_replay 相同的回放，但允许卡牌前端为某个实体按顺序强制技能。
 ///
-/// forced_skills 是技能 id 队列：每次轮到 actor_id 行动时消费一个；
-/// 队列耗尽后恢复 Runtime 原本的概率选择。
+/// actions 为完整的 actor/skill/packed_mp 三元组，药水放在 packed_mp 高字节。
+/// 受控队伍指令耗尽后暂停，非法编号或不完整三元组返回 INVALID_ARGUMENT。
 #[wasm_bindgen(unchecked_return_type = "BattleReplay")]
 pub fn battle_replay_forced(
     raw_input: String,
@@ -382,12 +382,15 @@ pub fn battle_replay_forced(
 ) -> WasmResult<JsValue> {
     install_panic_hook();
     let options = ts_in(options)?;
-    // 先拒绝不完整或未知的协议值，保持 cards 的批量与流式入口一致。
-    let decoded = tswn_core::runtime::forced_action::decode_actions(&actions).map_err(error::invalid_argument)?;
-    tswn_core::runtime::forced_action::set_potions(decoded.potions);
-    tswn_core::runtime::forced_action::set(decoded.pairs);
+    let actions = tswn_core::runtime::forced_action::decode_actions(&actions).map_err(error::invalid_argument)?;
+    // 即使解析 raw 失败也清除尚未被会话接走的指令，不污染下一场对局。
+    struct ClearPending;
+    impl Drop for ClearPending {
+        fn drop(&mut self) { tswn_core::runtime::forced_action::clear(); }
+    }
+    let _clear_pending = ClearPending;
+    tswn_core::runtime::forced_action::set_actions(actions);
     let result = tswn_core::cli_api::battle_replay(&raw_input, options.to_core());
-    tswn_core::runtime::forced_action::clear();
     battle::dto_to_js(&result.map_err(error::cli_api_error)?)
 }
 

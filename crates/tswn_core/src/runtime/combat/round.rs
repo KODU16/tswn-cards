@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 impl CombatRuntime {
     pub fn run_minimal_round(&mut self) -> RoundOutcome { self.run_minimal_round_with_capture::<true>() }
@@ -37,6 +37,8 @@ impl CombatRuntime {
         } else {
             RunUpdates::new_no_capture()
         };
+        // 冰冻在调度阶段解除，及时结算拜谢。
+        self.relic_reflect_expired(&mut updates);
         for target in self.scheduler.take_ice_release_events() {
             updates.add_newline();
             updates.add(RuntimeFrame::replay_update(
@@ -73,19 +75,17 @@ impl CombatRuntime {
         }
         #[cfg(not(feature = "no_debug"))]
         let action_rng_before = RngCheckpoint::from_rc4(&self.rng);
-        // 药水仅在服用者下一次被调度时还原；同回合的准备分支不能提前清除。
+        // 药水持续到服用者的下一次行动，不因其他单位行动而失效。
         self.revert_active_potion(action.actor);
         let smart = self.roll_actor_smart(action.actor);
         // 潜行 pending 的 pre-action 槽位可能在技能表重建（升级/合并/状态刷新）时被丢掉，
         // tswn 自己在施放时会 ensure 一次，这里在每次行动前补回来，
         // 之后完全交给引擎的 pre_action 规则判断要不要背刺、会不会被识破。
-        if let Some(pending) = self
-            .entities
-            .get(action.actor)
-            .and_then(|entity| entity.runtime.assassinate)
-        {
-            if let Some(entity) = self.entities.get_mut(action.actor) {
-                entity.template.skills.ensure_pre_action_lane(pending.fixed_lane);
+        if crate::runtime::forced_action::controlled_team().is_some_and(|team| self.is_controlled_actor(action.actor, team)) {
+            if let Some(pending) = self.entities.get(action.actor).and_then(|entity| entity.runtime.assassinate) {
+                if let Some(entity) = self.entities.get_mut(action.actor) {
+                    entity.template.skills.ensure_pre_action_lane(pending.fixed_lane);
+                }
             }
         }
         let plain_skill_pre_action = legacy_plain_action
@@ -328,13 +328,20 @@ impl CombatRuntime {
     fn finish_round_with_capture<const CAPTURE_UPDATES: bool>(
         &mut self,
         action: Option<ActionPlan>,
-        updates: RunUpdates,
+        mut updates: RunUpdates,
     ) -> RoundOutcome {
         debug_assert_eq!(updates.capture_updates, CAPTURE_UPDATES);
         // 每次实际行动结束后恢复全队；空调度步不触发遗物。
         if action.is_some() {
-            let shield_skill = self.registry.skill_id_by_export_name(crate::runtime::profile::DEFAULT_CORE_SHIELD_SKILL_EXPORT);
-            let living: Vec<_> = self.entities.iter().filter(|(_, entity)| entity.runtime.alive).map(|(id, _)| id).collect();
+            let shield_skill = self
+                .registry
+                .skill_id_by_export_name(crate::runtime::profile::DEFAULT_CORE_SHIELD_SKILL_EXPORT);
+            let living: Vec<_> = self
+                .entities
+                .iter()
+                .filter(|(_, entity)| entity.runtime.alive)
+                .map(|(id, _)| id)
+                .collect();
             for entity_id in living {
                 let entity = self.entities.get_mut(entity_id).expect("living relic target disappeared");
                 if self.relic_heal_team == Some(entity.runtime.team) {
@@ -342,14 +349,22 @@ impl CombatRuntime {
                     entity.runtime.hp = (entity.runtime.hp + heal.max(1)).min(entity.template.max_hp).max(entity.runtime.hp);
                 }
                 if self.relic_shield_team == Some(entity.runtime.team) {
-                    let skill_cap = shield_skill.and_then(|id| entity.template.skills.skills().iter().position(|skill| *skill == id))
-                        .and_then(|lane| entity.template.skills.level_at(lane)).unwrap_or(0) as i32;
+                    let skill_cap = shield_skill
+                        .and_then(|id| entity.template.skills.skills().iter().position(|skill| *skill == id))
+                        .and_then(|lane| entity.template.skills.level_at(lane))
+                        .unwrap_or(0) as i32;
                     let cap = if skill_cap > 0 { skill_cap } else { 30 };
                     let shield = self.relic_shields.entry(entity_id.0).or_default();
                     *shield = (*shield + 3).min(cap);
                 }
             }
         }
+        if let Some(action) = &action {
+            self.relic_tick_expiries(action.actor);
+        }
+        self.relic_reflect_expired(&mut updates);
+        self.relic_consumed
+            .retain(|id| self.entities.get(EntityIdx(*id)).is_none_or(|e| e.runtime.hp <= 0));
         let frame = (CAPTURE_UPDATES && updates.had_updates()).then_some(RuntimeFrame { updates });
         self.round += 1;
         let winner_team = if CAPTURE_UPDATES {
@@ -391,13 +406,30 @@ impl CombatRuntime {
         let Some(entity) = self.entities.get(actor) else {
             return false;
         };
-        if entity.template.team != team {
+        // 大逃杀使用 u32::MAX 表示双方本体和分身均由玩家控制。
+        if team != u32::MAX as usize && entity.template.team != team {
             return false;
         }
         match self.registry.player_kind(entity.runtime.kind) {
             None => true,
             Some(spec) => spec.export_name == crate::runtime::profile::DEFAULT_CORE_CLONE_KIND_EXPORT,
         }
+    }
+
+    // 普攻与技能耗蓝完全分开：不读取 MP、不掷技能费用，也不扣除任何 MP。
+    fn prepare_forced_normal_attack(&mut self, actor: EntityIdx, smart: bool) -> Option<PreparedPlainAction> {
+        let target = self
+            .select_plain_default_attack_target(actor, smart)
+            .or_else(|| self.select_plain_default_attack_target(actor, false));
+        let Some(target) = target else {
+            crate::runtime::forced_action::set_pause(actor.0);
+            return None;
+        };
+        Some(PreparedPlainAction::BasicAttack {
+            target,
+            use_magic: false,
+            amount: self.entities.get(actor).expect("normal attack actor exists").runtime.attack,
+        })
     }
 
     pub fn prepare_plain_action(
@@ -407,7 +439,6 @@ impl CombatRuntime {
         pre_action: PlainSkillPreActionOutcome,
     ) -> Option<PreparedPlainAction> {
         crate::runtime::forced_action::hit();
-        // 上一手的药水只持续一回合，这里先还原
         // 狂暴（含被附体）期间由引擎接管：不接收玩家指令、也不停下来要牌。
         let berserk_forced = !pre_action.clear_forced_action && self.has_plain_berserk_state(actor);
         let mut berserk_submitted = false;
@@ -415,54 +446,56 @@ impl CombatRuntime {
         // 但引擎自己有强制动作时（潜行→背刺的第二步）必须先让引擎走完，
         // 否则玩家能在这段窗口里插别的技能，背刺就永远放不出来。
         if pre_action.forced_skill.is_none() {
-        if let Some((forced_skill, forced_mp)) = crate::runtime::forced_action::take(actor.0 as u32) {
-            if let Some(code) = crate::runtime::forced_action::take_potion(actor.0 as u32) {
-                self.apply_potion(actor, code);
-            }
-            if berserk_forced {
-                // 狂暴：玩家这一手只用来推进节奏，真正动作由引擎接管
-                berserk_submitted = true;
-            } else {
-            // 玩家抽到这张牌时已经掷过消耗；没有就按 tswn 现场掷。
-            let req_mp = match forced_mp {
-                Some(cost) => cost as i32,
-                None => {
-                    let req_mp_byte = self.rng.next_u8();
-                    (req_mp_byte & 15) as i32 + 8
+            if let Some(command) = crate::runtime::forced_action::take(actor.0 as u32) {
+                let forced_skill = command.skill;
+                let forced_mp = command.mp;
+                if command.potion > 0 {
+                    self.apply_potion(actor, command.potion);
                 }
-            };
-            let req_mp = (req_mp - crate::runtime::forced_action::mp_reduction(forced_skill) as i32).max(1);
-            let (mp, attack) = {
-                let entity = self
-                    .entities
-                    .get(actor)
-                    .unwrap_or_else(|| panic!("unknown forced action actor: {}", actor.0));
-                (entity.runtime.magic_point, entity.runtime.attack)
-            };
-            // 玩家点名要用这个技能：目标选择按「不挑目标」的宽松口径，
-            // 避免因为 AI 的 smart 过滤（例如瘟疫只挑 160~400 血的目标）而放不出来。
-            let prepared = if mp >= req_mp {
-                self.prepare_forced_builtin_skill(actor, forced_skill, smart)
-            } else {
-                None
-            };
-            if let Some(prepared) = prepared {
-                if let Some(entity) = self.entities.get_mut(actor) {
-                    entity.runtime.magic_point -= req_mp;
+                if berserk_forced {
+                    // 狂暴：玩家这一手只用来推进节奏，真正动作由引擎接管
+                    berserk_submitted = true;
+                } else {
+                    if forced_skill == 255 {
+                        return self.prepare_forced_normal_attack(actor, smart);
+                    }
+                    // 玩家抽到这张牌时已经掷过消耗；没有就按 tswn 现场掷。
+                    let req_mp = match forced_mp {
+                        Some(cost) => cost as i32,
+                        None => {
+                            let req_mp_byte = self.rng.next_u8();
+                            (req_mp_byte & 15) as i32 + 8
+                        }
+                    };
+                    let reduction = public_builtin_skill(forced_skill)
+                        .map_or(0, |skill| self.ability_value(actor, skill.export_name()).0 as i32);
+                    let req_mp = (req_mp - reduction).max(1);
+                    let mp = {
+                        let entity = self
+                            .entities
+                            .get(actor)
+                            .unwrap_or_else(|| panic!("unknown forced action actor: {}", actor.0));
+                        entity.runtime.magic_point
+                    };
+                    // 玩家点名要用这个技能：目标选择按「不挑目标」的宽松口径，
+                    // 避免因为 AI 的 smart 过滤（例如瘟疫只挑 160~400 血的目标）而放不出来。
+                    let prepared = if mp >= req_mp {
+                        self.prepare_forced_builtin_skill(actor, forced_skill, smart)
+                    } else {
+                        None
+                    };
+                    if let Some(prepared) = prepared {
+                        if let Some(entity) = self.entities.get_mut(actor) {
+                            entity.runtime.magic_point -= req_mp;
+                        }
+                        return Some(PreparedPlainAction::BuiltinSkill(prepared));
+                    }
+                    if forced_skill != 255 {
+                        crate::runtime::forced_action::record_fallback(actor.0 as u32, "[1]的指定技能无法生效，改为普通攻击");
+                    }
+                    return self.prepare_forced_normal_attack(actor, smart);
                 }
-                return Some(PreparedPlainAction::BuiltinSkill(prepared));
             }
-            if forced_skill != 255 {
-                crate::runtime::forced_action::record_fallback(actor.0, "[1]的指定技能无法生效，改为普通攻击");
-            }
-            let target = self.select_plain_default_attack_target(actor, smart)?;
-            return Some(PreparedPlainAction::BasicAttack {
-                target,
-                use_magic: false,
-                amount: attack,
-            });
-            }
-        }
         }
 
         // 受控单位：只有在引擎没有强制动作、且不是「狂暴已收到玩家这一手」时才暂停。
@@ -515,7 +548,12 @@ impl CombatRuntime {
                 },
             )
         };
-        let can_scan_skills = mp_before >= req_mp;
+        let ability_team = self
+            .entities
+            .get(actor)
+            .and_then(|e| self.entities.get(e.runtime.root_owner))
+            .map_or(usize::MAX, |e| e.template.team);
+        let can_scan_skills = mp_before >= (req_mp - crate::runtime::forced_action::max_ability_cost(ability_team) as i32).max(1);
         #[cfg(not(feature = "no_debug"))]
         let probe_action = self.probe_plain_action_matches(actor);
         #[cfg(not(feature = "no_debug"))]
@@ -573,8 +611,16 @@ impl CombatRuntime {
             } else {
                 self.scan_plain_action_skill_probabilities(actor, smart)
             };
-            self.entities.get_mut(actor).unwrap().runtime.magic_point -= req_mp;
-            selected
+            let reduction = selected
+                .as_ref()
+                .map_or(0, |p| self.ability_value(actor, p.selected.skill.export_name()).0 as i32);
+            let cost = (req_mp - reduction).max(1);
+            if mp_before < cost {
+                None
+            } else {
+                self.entities.get_mut(actor).unwrap().runtime.magic_point -= cost;
+                selected
+            }
         } else {
             None
         };
@@ -661,13 +707,15 @@ impl CombatRuntime {
         };
         let delta = (*slot / 4).max(8);
         *slot += delta;
-        crate::runtime::forced_action::set_active_potion(Some((actor.0, field as u8, delta)));
+        crate::runtime::forced_action::set_active_potion(actor.0 as u32, field as u8, delta);
     }
 
     /// 还原上一回合的药水加成
     fn revert_active_potion(&mut self, actor: EntityIdx) {
-        let Some((actor_id, field, delta)) = crate::runtime::forced_action::take_active_potion(actor.0) else { return };
-        let entity = self.entities.get_mut(EntityIdx(actor_id));
+        let Some((field, delta)) = crate::runtime::forced_action::take_active_potion(actor.0 as u32) else {
+            return;
+        };
+        let entity = self.entities.get_mut(actor);
         let Some(entity) = entity else { return };
         match field {
             0 => entity.runtime.attack -= delta,
@@ -828,10 +876,7 @@ impl CombatRuntime {
             targets = self.select_forced_skill_targets(actor, builtin_skill, false);
         }
         let allows_empty_targets = builtin_skill == BuiltinActiveSkill::Assassinate
-            && self
-                .entities
-                .get(actor)
-                .is_some_and(|entity| entity.runtime.assassinate.is_some());
+            && self.entities.get(actor).is_some_and(|entity| entity.runtime.assassinate.is_some());
         if targets.is_empty() && !allows_empty_targets {
             return None;
         }
@@ -1005,6 +1050,7 @@ impl CombatRuntime {
         level: u32,
         smart: bool,
     ) -> bool {
+        let level = self.card_skill_level(actor, builtin_skill, level);
         #[cfg(not(feature = "no_debug"))]
         let probe_action = self.probe_plain_action_matches(actor);
         match builtin_skill {

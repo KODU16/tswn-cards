@@ -86,7 +86,7 @@ impl CombatRuntime {
                     let fire_mag = self.entities.get(target).unwrap().states.fire_mag(fire_state_key);
                     let atp = self.entities.get(caster).unwrap().runtime.get_at(true, &mut self.rng);
                     let mut defend_value = RuntimeDefendValue::Atp {
-                        value: atp * (1.5 + fire_mag) * crate::runtime::forced_action::ability_multiplier(0),
+                        value: atp * (1.5 + fire_mag),
                         caster,
                         target,
                         is_magic: true,
@@ -129,8 +129,9 @@ impl CombatRuntime {
                         };
                         if self.apply_plain_legacy_damage_into(caster, target, amount, updates) {
                             self.drain_plain_lethal_damage_into(caster, target, updates);
-                        } else if amount > 0 {
-                            self.apply_fire_on_damage(target, fire_state_key);
+                        } else if amount > 0 && !self.relic_blocks_damage(caster, target, amount) {
+                            // 戾气拦截伤害时也跳过燃烧附加效果。
+                            self.apply_fire_on_damage(caster, target, fire_state_key);
                         }
                     }
                 }
@@ -144,7 +145,7 @@ impl CombatRuntime {
                     let fire_mag = self.entities.get(target).unwrap().states.fire_mag(fire_state_key);
                     let atp = self.entities.get(caster).unwrap().runtime.get_at(true, &mut self.rng);
                     let mut defend_value = RuntimeDefendValue::Atp {
-                        value: atp * (4.0 + fire_mag) * crate::runtime::forced_action::ability_multiplier(0),
+                        value: atp * (4.0 + fire_mag),
                         caster,
                         target,
                         is_magic: true,
@@ -191,8 +192,9 @@ impl CombatRuntime {
                         };
                         if self.apply_plain_legacy_damage_into(caster, target, amount, updates) {
                             self.drain_plain_lethal_damage_into(caster, target, updates);
-                        } else if amount > 0 {
-                            self.apply_fire_on_damage(target, fire_state_key);
+                        } else if amount > 0 && !self.relic_blocks_damage(caster, target, amount) {
+                            // 戾气拦截伤害时也跳过燃烧附加效果。
+                            self.apply_fire_on_damage(caster, target, fire_state_key);
                         }
                     }
                     if killed_caster {
@@ -498,8 +500,10 @@ impl CombatRuntime {
         self.ensure_effect_entity("merge", "target", target);
         let target_skills = self.entities.get(target).unwrap().template.skills.clone();
         let target_build = self.entities.get(target).unwrap().template.clone_build.clone();
-        let target_magic_point = self.entities.get(target).unwrap().runtime.magic_point;
-        let target_move_points = self.entities.get(target).unwrap().runtime.move_state.speed_points;
+        let ability_power = self.ability_value(caster, "core.skill.merge").1;
+        let target_magic_point = (self.entities.get(target).unwrap().runtime.magic_point as f64 * ability_power).round() as i32;
+        let target_move_points =
+            (self.entities.get(target).unwrap().runtime.move_state.speed_points as f64 * ability_power).round() as i32;
         let (merged, transfer_magic_point, transfer_move_points) = {
             let caster_entity = self
                 .entities

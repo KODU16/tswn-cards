@@ -64,6 +64,11 @@ impl CombatRuntime {
         percent = percent.min(99);
         let new_hp = ((target_hp as f64) * (100 - percent) as f64 / 100.0).ceil() as i32;
         let damage = (target_hp - new_hp).max(0);
+        // 百分比伤害同样遵守戾气的最低伤害规则。
+        if self.relic_blocks_damage(actor, target, damage) {
+            updates.add(RuntimeFrame::legacy_damage_update(actor.0 as usize, target.0 as usize, 0));
+            return;
+        }
         let mut update =
             crate::runtime::update::RunUpdate::new("[1]体力减少[2]%", actor.0 as usize, target.0 as usize, damage as u32);
         update.param = Some(percent.max(0) as u32);
@@ -254,13 +259,26 @@ impl CombatRuntime {
                 .get_mut(actor)
                 .unwrap_or_else(|| panic!("unknown runtime clone actor: {}", actor.0));
             let old_max_hp = owner.template.max_hp.max(1);
-            let next_hp = (((owner.runtime.hp as f64) * 0.5).ceil() as i32).clamp(1, old_max_hp);
+            // HP 增益不参与分身分配，原角色分身后仍单独保留 +30。
+            let bonus_hp = owner.template.opening_bonus[7];
+            let hp_ratio = if self.clone_relic_team == Some(owner.runtime.team) {
+                0.6
+            } else {
+                0.5
+            };
+            let next_hp =
+                ((((owner.runtime.hp - bonus_hp).max(1) as f64) * hp_ratio).ceil() as i32 + bonus_hp).clamp(1, old_max_hp);
             let build = owner
                 .template
                 .clone_build
                 .as_mut()
                 .unwrap_or_else(|| panic!("runtime clone build data missing for entity {}", actor.0));
-            build.decay_owner();
+            let weakening = if self.clone_relic_team == Some(owner.runtime.team) {
+                0.8
+            } else {
+                1.0
+            };
+            build.decay_owner_with_weakening(weakening);
             let stats = build.derive_stats();
             owner.apply_derived_stats(stats);
             owner.runtime.hp = next_hp;
@@ -321,8 +339,8 @@ impl CombatRuntime {
                 root_name,
                 owner.template.display_name.clone(),
                 owner.runtime.team,
-                owner.runtime.hp,
-                owner.runtime.magic,
+                (owner.runtime.hp - owner.template.opening_bonus[7]).max(1),
+                owner.runtime.magic - owner.template.opening_bonus[4],
                 clone_skills,
                 clone_build,
                 shadow_blueprint,

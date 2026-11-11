@@ -200,6 +200,8 @@ impl CombatRuntime {
             return;
         }
 
+        // 持有者自身拜谢与敌对属性修改器分别计算。
+        let extended = self.relic_debuff_turns(actor, target);
         let existing = self
             .entities
             .get(target)
@@ -213,7 +215,7 @@ impl CombatRuntime {
                     .map(|entity| entity.runtime.team)
             });
             if existing_team_idx == Some(caster_effective_team_idx) {
-                step += 1;
+                step += 1 + extended;
             } else {
                 group_id = actor.0 as usize;
                 source_team_idx = Some(caster_effective_team_idx);
@@ -252,7 +254,7 @@ impl CombatRuntime {
                     Some(caster_effective_team_idx),
                     Some(caster_effective_team_idx),
                     Some(target.0),
-                    if charge_active { 4 } else { 1 },
+                    (if charge_active { 4 } else { 1 }) + extended,
                     charm_priority,
                 )),
                 "runtime charm state should be inserted"
@@ -274,6 +276,8 @@ impl CombatRuntime {
                 actor.0, target.0, self.rng.i, self.rng.j,
             );
         }
+        self.relic_status_applied(target, 76);
+        self.language_debuff(actor, target);
     }
 
     pub fn select_plain_heal_targets(&mut self, actor: EntityIdx, smart: bool) -> PreparedTargetList {

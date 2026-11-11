@@ -7,12 +7,14 @@
 
 use super::*;
 
+mod abilities;
 mod attack;
 mod defense;
 mod effects;
 mod infection;
 mod lifecycle;
 mod passive;
+mod relics;
 mod round;
 mod skills_control;
 mod skills_debuff;
@@ -92,6 +94,15 @@ pub struct CombatRuntime {
     pub trace: Option<RuntimeTrace>,
     pub round: u64,
     /// 仅网站遗物启用；普通引擎对局保持原始规则。
+    pub language_relic_team: Option<usize>,
+    pub debuff_relic_team: Option<usize>,
+    pub clone_relic_team: Option<usize>,
+    pub positive_status_relic_team: Option<usize>,
+    pub thanks_relic_team: Option<usize>,
+    pub inequality_relic_team: Option<usize>,
+    pub relic_thanks: std::collections::HashMap<(u32, u32), StateEntry>,
+    pub relic_expiries: std::collections::HashMap<(u32, u32), u8>,
+    pub relic_consumed: std::collections::HashSet<u32>,
     pub relic_heal_team: Option<usize>,
     pub relic_shield_team: Option<usize>,
     pub relic_damage_floor: bool,
@@ -105,8 +116,13 @@ pub struct CombatRuntime {
 impl CombatRuntime {
     /// 戾气只拦截敌对双方的低额伤害，队友、自伤与回复不受影响。
     pub(crate) fn relic_blocks_damage(&self, caster: EntityIdx, target: EntityIdx, amount: i32) -> bool {
-        self.relic_damage_floor && amount > 0 && amount < 30
-            && self.entities.get(caster).zip(self.entities.get(target))
+        self.relic_damage_floor
+            && amount > 0
+            && amount < 30
+            && self
+                .entities
+                .get(caster)
+                .zip(self.entities.get(target))
                 .is_some_and(|(from, to)| from.runtime.team != to.runtime.team)
     }
 }
