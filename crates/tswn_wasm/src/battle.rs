@@ -56,6 +56,10 @@ impl BattleSession {
     pub fn set_abilities(&mut self, packet: Vec<u32>) -> WasmResult<()> {
         self.inner.set_abilities(&packet).map_err(cli_api_error)
     }
+    /// 永久托管指定根角色及其分身，保留 tswn 原生选招与随机流。
+    pub fn set_auto_actors(&mut self, roots: Vec<u32>) -> WasmResult<()> {
+        self.inner.set_auto_actors(&roots).map_err(cli_api_error)
+    }
     /// 大逃杀在开局设置各角色当前 HP，最大 HP 保持原始构建值。
     pub fn set_initial_hp(&mut self, packet: Vec<u32>) -> WasmResult<()> {
         self.inner.set_initial_hp(&packet).map_err(cli_api_error)

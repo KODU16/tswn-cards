@@ -407,6 +407,10 @@ impl CombatRuntime {
             return false;
         };
         // 大逃杀使用 u32::MAX 表示双方本体和分身均由玩家控制。
+        // 永久旁观者的本体和派生角色均使用 tswn 原生行动选择。
+        if crate::runtime::forced_action::is_automatic(entity.runtime.root_owner.0) {
+            return false;
+        }
         if team != u32::MAX as usize && entity.template.team != team {
             return false;
         }

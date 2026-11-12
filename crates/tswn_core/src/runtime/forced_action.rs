@@ -15,6 +15,8 @@ pub struct ForcedState {
     pub queue: Vec<ForcedAction>,
     pub controlled_team: Option<usize>,
     pub paused_actor: Option<u32>,
+    /// 永久交回引擎操作的根角色，分身按 root_owner 继承。
+    pub automatic_roots: std::collections::BTreeSet<u32>,
     /// 能力卡为独立乘区及减耗，不参与技能熟练度读写。
     pub abilities: BTreeMap<String, (u32, u32)>,
     active_potions: BTreeMap<u32, (u8, i32)>,
@@ -243,3 +245,6 @@ pub fn mp_reduction(root: u32) -> i32 {
         if root == owner { cost as i32 } else { 0 }
     })
 }
+
+/// 自动托管直接进入原生选招，不创建强制普攻或技能指令。
+pub fn is_automatic(root: u32) -> bool { ACTIVE.with(|state| state.borrow().automatic_roots.contains(&root)) }

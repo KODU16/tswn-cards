@@ -139,6 +139,44 @@ impl BattleSession {
     /// 受控单位把战斗逼停时，返回等待玩家指令的实体 id。
     pub fn paused_actor(&self) -> Option<u32> { self.paused }
 
+    /// 永久将受控根角色及其派生单位交给原生引擎；整包校验后提交，不消耗随机数。
+    pub fn set_auto_actors(&mut self, roots: &[u32]) -> CliApiResult<()> {
+        use crate::runtime::EntityIdx;
+        if self.is_done() || self.driver.forced.controlled_team.is_none() {
+            return Err(crate::cli_api::CliApiError::InvalidArgument(
+                "automatic actors require a live controlled session".into(),
+            ));
+        }
+        for id in roots {
+            let valid = self.driver.runner.runtime().entities.get(EntityIdx(*id)).is_some_and(|entity| {
+                entity.runtime.root_owner == EntityIdx(*id)
+                    && self
+                        .driver
+                        .forced
+                        .controlled_team
+                        .is_some_and(|team| team == u32::MAX as usize || team == entity.template.team)
+            });
+            if !valid {
+                return Err(crate::cli_api::CliApiError::InvalidArgument(
+                    "invalid automatic root actor".into(),
+                ));
+            }
+        }
+        self.driver.forced.automatic_roots.extend(roots.iter().copied());
+        if self.paused.is_some_and(|id| {
+            self.driver
+                .runner
+                .runtime()
+                .entities
+                .get(EntityIdx(id))
+                .is_some_and(|entity| self.driver.forced.automatic_roots.contains(&entity.runtime.root_owner.0))
+        }) {
+            self.paused = None;
+            self.driver.forced.paused_actor = None;
+        }
+        Ok(())
+    }
+
     /// 地图遭遇只继承当前 HP，最大 HP 不变；整批验证后才修改，且不能在行动后重设。
     pub fn set_initial_hp(&mut self, packet: &[u32]) -> CliApiResult<()> {
         use crate::cli_api::CliApiError;
@@ -1301,5 +1339,52 @@ mod relic_tests {
             assert_eq!(buff.entities.get(spawned).unwrap().runtime.resistance, after[5]);
         }
         assert!(seen.iter().all(|n| *n));
+    }
+}
+
+#[cfg(test)]
+mod automatic_control_tests {
+    use super::*;
+    // 永久托管不注入任何强制指令，同随机种子的结果与未受控原生对局一致。
+    #[test]
+    fn automatic_root_matches_native_battle_and_is_session_local() {
+        let raw = "alpha@red
+
+beta@blue
+seed:automatic@!";
+        let mut native = BattleSession::new(raw, BattleOptions::default()).unwrap();
+        let team = native.initial_states()[0].team_index;
+        let mut controlled = BattleSession::new(
+            raw,
+            BattleOptions {
+                controlled_team: Some(team),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let roots: Vec<_> = controlled
+            .initial_states()
+            .iter()
+            .filter(|s| s.team_index == team)
+            .map(|s| s.id as u32)
+            .collect();
+        assert!(controlled.set_auto_actors(&[u32::MAX]).is_err());
+        while controlled.next_frame().unwrap().is_some() {}
+        assert!(controlled.paused_actor().is_some());
+        controlled.set_auto_actors(&roots).unwrap();
+        assert!(controlled.paused_actor().is_none());
+        while native.next_frame().unwrap().is_some() {}
+        while controlled.next_frame().unwrap().is_some() {}
+        assert_eq!(native.current_states(), controlled.current_states());
+        let mut another = BattleSession::new(
+            raw,
+            BattleOptions {
+                controlled_team: Some(team),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        while another.next_frame().unwrap().is_some() {}
+        assert!(another.paused_actor().is_some());
     }
 }
