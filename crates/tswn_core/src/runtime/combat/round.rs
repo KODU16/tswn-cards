@@ -128,6 +128,10 @@ impl CombatRuntime {
                 return Some(self.finish_round_with_capture::<CAPTURE_UPDATES>(None, updates));
             };
             match &prepared {
+                PreparedPlainAction::Chaos(_) => {
+                    action.target = action.actor;
+                    action.amount = 0;
+                }
                 PreparedPlainAction::BasicAttack { target, amount, .. } => {
                     action.target = *target;
                     action.amount = *amount;
@@ -169,6 +173,11 @@ impl CombatRuntime {
         let terminal_plain_action = if state_intercepted_action {
             // PRE_ACTION 状态钩子接管本次行动后，legacy 仍会继续执行恢复和完整的行动后链。
             legacy_plain_action && !self.has_alive_enemy_or_pending_spawn(action.actor)
+        } else if matches!(prepared_plain_action, Some(PreparedPlainAction::Chaos(_))) {
+            if let Some(PreparedPlainAction::Chaos(card)) = prepared_plain_action.take() {
+                self.drain_chaos_card_into(action.actor, card, &mut updates);
+            }
+            legacy_plain_action && !self.has_alive_enemy_or_pending_spawn(action.actor)
         } else if builtin_plain_action {
             let Some(PreparedPlainAction::BuiltinSkill(prepared)) = prepared_plain_action.take() else {
                 unreachable!("builtin action marker must retain the prepared action")
@@ -192,6 +201,7 @@ impl CombatRuntime {
                 Some(PreparedPlainAction::Saitama { target }) => {
                     self.drain_plain_saitama_action_into(action.actor, target, &mut updates);
                 }
+                Some(PreparedPlainAction::Chaos(_)) => unreachable!("chaos actions execute before plain attacks"),
                 Some(PreparedPlainAction::BuiltinSkill(_)) => {
                     unreachable!("builtin skill actions are handled before the default action branch")
                 }
@@ -460,6 +470,14 @@ impl CombatRuntime {
                     // 狂暴：玩家这一手只用来推进节奏，真正动作由引擎接管
                     berserk_submitted = true;
                 } else {
+                    // 混沌只占用一次行动与一次 MP 费用，程序内部操作不重复扣费。
+                    if let Some((card, cost)) = crate::runtime::forced_action::take_chaos(actor.0) {
+                        let entity = self.entities.get_mut(actor).unwrap();
+                        if entity.runtime.magic_point >= cost {
+                            entity.runtime.magic_point -= cost;
+                            return Some(PreparedPlainAction::Chaos(card));
+                        }
+                    }
                     if forced_skill == 255 {
                         return self.prepare_forced_normal_attack(actor, smart);
                     }

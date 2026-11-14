@@ -1,4 +1,4 @@
-﻿//! 战斗机制层：构建模板经过导入后，由这里的唯一执行链推进。
+//! 战斗机制层：构建模板经过导入后，由这里的唯一执行链推进。
 //!
 //! # 数据与执行
 //!
@@ -33,6 +33,7 @@
 //! `LegacyStep` 是当前 Runtime 内用于对齐游戏行动条的调度方式。
 
 mod batch;
+pub mod chaos;
 mod combat;
 mod cqp;
 pub mod effect;

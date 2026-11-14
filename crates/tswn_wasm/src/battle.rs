@@ -60,6 +60,10 @@ impl BattleSession {
     pub fn set_auto_actors(&mut self, roots: Vec<u32>) -> WasmResult<()> {
         self.inner.set_auto_actors(&roots).map_err(cli_api_error)
     }
+    /// 单人混沌程序由运行时直接解释；不由浏览器修改战斗数值。
+    pub fn submit_chaos_action(&mut self, actor: u32, program: String, packed: u32) -> WasmResult<()> {
+        self.inner.submit_chaos_action(actor, &program, packed).map_err(cli_api_error)
+    }
     /// 大逃杀在开局设置各角色当前 HP，最大 HP 保持原始构建值。
     pub fn set_initial_hp(&mut self, packet: Vec<u32>) -> WasmResult<()> {
         self.inner.set_initial_hp(&packet).map_err(cli_api_error)

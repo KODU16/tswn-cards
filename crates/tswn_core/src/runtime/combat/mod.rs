@@ -58,6 +58,7 @@ pub enum PlainAttackOnDamage {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PreparedPlainAction {
+    Chaos(crate::runtime::chaos::ChaosCard),
     BasicAttack {
         target: EntityIdx,
         use_magic: bool,

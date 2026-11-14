@@ -177,6 +177,23 @@ impl BattleSession {
         Ok(())
     }
 
+    /// 单人混沌牌先完整验证程序和费用，再原子绑定到当前等待行动。
+    pub fn submit_chaos_action(&mut self, actor: u32, program: &str, packed: u32) -> CliApiResult<()> {
+        let card = crate::runtime::chaos::ChaosCard::parse(program).map_err(crate::cli_api::CliApiError::InvalidArgument)?;
+        let cost = (packed & 255) as i32;
+        if cost < 1
+            || !self
+                .current_states
+                .iter()
+                .any(|s| s.id == actor as usize && (s.magic_point + if packed >> 8 == 10 { 40 } else { 0 }).min(100) >= cost)
+        {
+            return Err(crate::cli_api::CliApiError::InvalidArgument("invalid chaos action cost".into()));
+        }
+        self.submit_action(actor, 255, packed)?;
+        self.driver.forced.chaos_pending = Some((actor, card, cost));
+        Ok(())
+    }
+
     /// 地图遭遇只继承当前 HP，最大 HP 不变；整批验证后才修改，且不能在行动后重设。
     pub fn set_initial_hp(&mut self, packet: &[u32]) -> CliApiResult<()> {
         use crate::cli_api::CliApiError;

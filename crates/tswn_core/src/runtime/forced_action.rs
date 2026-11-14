@@ -15,6 +15,8 @@ pub struct ForcedState {
     pub queue: Vec<ForcedAction>,
     pub controlled_team: Option<usize>,
     pub paused_actor: Option<u32>,
+    /// 混沌程序只与下一次对应角色的普攻载体绑定，不污染其他会话。
+    pub chaos_pending: Option<(u32, super::chaos::ChaosCard, i32)>,
     /// 永久交回引擎操作的根角色，分身按 root_owner 继承。
     pub automatic_roots: std::collections::BTreeSet<u32>,
     /// 能力卡为独立乘区及减耗，不参与技能熟练度读写。
@@ -248,3 +250,15 @@ pub fn mp_reduction(root: u32) -> i32 {
 
 /// 自动托管直接进入原生选招，不创建强制普攻或技能指令。
 pub fn is_automatic(root: u32) -> bool { ACTIVE.with(|state| state.borrow().automatic_roots.contains(&root)) }
+
+/// 取走该行动的混沌程序；普通对局始终为空。
+pub fn take_chaos(actor: u32) -> Option<(super::chaos::ChaosCard, i32)> {
+    ACTIVE.with(|s| {
+        let mut state = s.borrow_mut();
+        if state.chaos_pending.as_ref().is_some_and(|x| x.0 == actor) {
+            state.chaos_pending.take().map(|(_, card, cost)| (card, cost))
+        } else {
+            None
+        }
+    })
+}
