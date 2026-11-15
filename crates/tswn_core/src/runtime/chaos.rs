@@ -166,7 +166,7 @@ impl CombatRuntime {
                             self.effects.push(QueuedEffect::SpawnWithMessage {
                                 caster: actor,
                                 template: child,
-                                message: "[0]创造了[混沌子体]".into(),
+                                message: crate::runtime::lang::get_lang("sklSummoned").into(),
                             });
                             self.drain_effects_into(updates);
                         }
@@ -285,7 +285,24 @@ impl CombatRuntime {
                             .collect();
                         let e = self.entities.get_mut(target).unwrap();
                         for key in keys {
+                            let message = e.states.entry(key).and_then(|entry| match entry.payload {
+                                StatePayload::Ice { .. } => Some("sklIceEnd"),
+                                StatePayload::Poison { .. } => Some("sklPoisonEnd"),
+                                StatePayload::Curse { .. } => Some("sklCurseEnd"),
+                                StatePayload::Slow { .. } => Some("sklSlowEnd"),
+                                StatePayload::Berserk { .. } => Some("sklBerserkEnd"),
+                                StatePayload::Charm { .. } => Some("sklCharmEnd"),
+                                _ => None,
+                            });
                             e.states.clear_legacy_key(key);
+                            if let Some(key) = message {
+                                updates.add(RuntimeFrame::replay_update(
+                                    actor.0 as usize,
+                                    target.0 as usize,
+                                    crate::runtime::lang::get_lang(key),
+                                    0,
+                                ));
+                            }
                         }
                         e.refresh_runtime_stats_from_template();
                     }
@@ -341,12 +358,26 @@ impl CombatRuntime {
                         }
                     }
                 }
-                updates.add(RuntimeFrame::replay_update(
-                    actor.0 as usize,
-                    target.0 as usize,
-                    format!("[{}]的效果作用于[1]", card.name),
-                    0,
-                ));
+                // 原生入口已生成伤害/回复/状态文本，仅为无文本操作拼接原技能词片段。
+                let message = match operation.op.as_str() {
+                    "shield" => Some("[1]的[护盾]上升"),
+                    "mp" | "mag_up" => Some("[1]魔力上升"),
+                    "drain_mp" => Some("[1]魔力减少"),
+                    "haste" => Some(crate::runtime::lang::get_lang("sklHasteHit")),
+                    "slow" => Some(crate::runtime::lang::get_lang("sklSlowHit")),
+                    "iron" => Some(crate::runtime::lang::get_lang("sklIrond")),
+                    "atk_up" => Some(crate::runtime::lang::get_lang("sklAccumulated")),
+                    "def_up" => Some("[1]防御力上升"),
+                    "res_up" => Some("[1]抗性上升"),
+                    "agi_up" => Some("[1]敏捷上升"),
+                    "wis_up" => Some("[1]智慧上升"),
+                    "speed_up" => Some("[1]速度上升"),
+                    "max_hp" => Some("[1]体力上升"),
+                    _ => None,
+                };
+                if let Some(message) = message {
+                    updates.add(RuntimeFrame::replay_update(actor.0 as usize, target.0 as usize, message, 0));
+                }
             }
         }
     }
