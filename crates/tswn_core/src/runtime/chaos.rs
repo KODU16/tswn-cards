@@ -146,7 +146,13 @@ impl CombatRuntime {
                             hp,
                             (owner.runtime.attack * v / 100).max(0),
                         )
-                        .with_display_name("混沌子体")
+                        // 机制类别与外显名称一致，战报直接使用原生召唤物名。
+                        .with_display_name(match operation.op.as_str() {
+                            "shadow" => "幻影",
+                            "zombie" => "丧尸",
+                            "clone" => "分身",
+                            _ => "使魔",
+                        })
                         .with_magic((owner.runtime.magic * v / 100).max(0))
                         .with_wisdom((owner.runtime.wisdom * v / 100).max(0))
                         .with_speed(owner.runtime.speed.max(1))
