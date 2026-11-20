@@ -364,6 +364,9 @@ impl CombatRuntime {
                         }
                     }
                 }
+                if crate::runtime::forced_action::controlled_team().is_some() {
+                    self.cap_card_attributes();
+                }
                 // 原生入口已生成伤害/回复/状态文本，仅为无文本操作拼接原技能词片段。
                 let message = match operation.op.as_str() {
                     "shield" => Some("[1]的[护盾]上升"),

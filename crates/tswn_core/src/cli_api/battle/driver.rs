@@ -147,6 +147,9 @@ impl BattleDriver {
                 }
             }
         }
+        if options.controlled_team.is_some() {
+            runner.runtime_mut().cap_card_attributes();
+        }
         // 创建时接管暂存指令；会话之间不共享后续动作。
         let mut forced = crate::runtime::forced_action::ForcedState::default();
         forced.queue = crate::runtime::forced_action::take_pending_actions();

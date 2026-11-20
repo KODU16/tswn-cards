@@ -127,3 +127,25 @@ impl CombatRuntime {
                 .is_some_and(|(from, to)| from.runtime.team != to.runtime.team)
     }
 }
+
+impl CombatRuntime {
+    /// 尖塔七围外显上限255：运行时一般项为外显-36，速度为外显+124；体力独立。
+    pub(crate) fn cap_card_attributes(&mut self) {
+        for entity in self.entities.iter_all_mut() {
+            entity.template.attack = entity.template.attack.min(219);
+            entity.runtime.attack = entity.runtime.attack.min(219);
+            entity.template.defense = entity.template.defense.min(219);
+            entity.runtime.defense = entity.runtime.defense.min(219);
+            entity.template.magic = entity.template.magic.min(219);
+            entity.runtime.magic = entity.runtime.magic.min(219);
+            entity.template.resistance = entity.template.resistance.min(219);
+            entity.runtime.resistance = entity.runtime.resistance.min(219);
+            entity.template.agility = entity.template.agility.min(219);
+            entity.runtime.agility = entity.runtime.agility.min(219);
+            entity.template.wisdom = entity.template.wisdom.min(219);
+            entity.runtime.wisdom = entity.runtime.wisdom.min(219);
+            entity.template.speed = entity.template.speed.min(379);
+            entity.runtime.speed = entity.runtime.speed.min(379);
+        }
+    }
+}

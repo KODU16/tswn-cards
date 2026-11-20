@@ -77,6 +77,9 @@ impl CombatRuntime {
         let action_rng_before = RngCheckpoint::from_rc4(&self.rng);
         // 药水持续到服用者的下一次行动，不因其他单位行动而失效。
         self.revert_active_potion(action.actor);
+        if crate::runtime::forced_action::controlled_team().is_some() {
+            self.cap_card_attributes();
+        }
         let smart = self.roll_actor_smart(action.actor);
         // 潜行 pending 的 pre-action 槽位可能在技能表重建（升级/合并/状态刷新）时被丢掉，
         // tswn 自己在施放时会 ensure 一次，这里在每次行动前补回来，
@@ -375,6 +378,9 @@ impl CombatRuntime {
         self.relic_reflect_expired(&mut updates);
         self.relic_consumed
             .retain(|id| self.entities.get(EntityIdx(*id)).is_none_or(|e| e.runtime.hp <= 0));
+        if crate::runtime::forced_action::controlled_team().is_some() {
+            self.cap_card_attributes();
+        }
         let frame = (CAPTURE_UPDATES && updates.had_updates()).then_some(RuntimeFrame { updates });
         self.round += 1;
         let winner_team = if CAPTURE_UPDATES {
@@ -727,7 +733,9 @@ impl CombatRuntime {
             5 => &mut entity.runtime.resistance,
             _ => &mut entity.runtime.wisdom,
         };
-        let delta = (*slot / 4).max(8);
+        // 只记录实际加上的药水量，回合结束还原不会把被上限截掉的数值再扣一次。
+        let cap = if field == 2 { 379 } else { 219 };
+        let delta = (*slot / 4).max(8).min((cap - *slot).max(0));
         *slot += delta;
         crate::runtime::forced_action::set_active_potion(actor.0 as u32, field as u8, delta);
     }
